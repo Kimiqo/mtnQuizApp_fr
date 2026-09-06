@@ -1,0 +1,122 @@
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=Barlow:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --font-display: 'Barlow Condensed', sans-serif;
+  --font-body: 'Barlow', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --color-mtn: #FFCC00;
+  --color-mtn-dim: #B89200;
+  --color-stage: #0D0D0D;
+  --color-card: #111111;
+  --color-border: #1e1e1e;
+  --color-border-2: #2a2a2a;
+  --color-tf-true: #16A34A;
+  --color-tf-true-lit: #22C55E;
+  --color-tf-false: #DC2626;
+  --color-tf-false-lit: #EF4444;
+}
+
+:root { color-scheme: dark; }
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root {
+  width: 100%; height: 100%;
+  margin: 0; padding: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-body);
+  background: #080808;
+  color: #fff;
+}
+
+* { scrollbar-width: thin; scrollbar-color: #2a2a2a transparent; }
+*::-webkit-scrollbar { width: 4px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
+
+/* ── Slot machine flicker ── */
+@keyframes slotFlicker {
+  0%, 100% { opacity: 1; transform: translateY(0); }
+  25% { opacity: 0.4; transform: translateY(-2px); }
+  75% { opacity: 0.7; transform: translateY(2px); }
+}
+.slot-flicker { animation: slotFlicker 0.1s ease-in-out infinite; }
+
+/* ── Glow pulses ── */
+@keyframes glowYellow {
+  0%, 100% { box-shadow: 0 0 20px 2px #FFCC0033, 0 0 60px 8px #FFCC0011; }
+  50% { box-shadow: 0 0 50px 10px #FFCC0055, 0 0 100px 20px #FFCC0022; }
+}
+@keyframes glowGreen {
+  0%, 100% { box-shadow: 0 0 20px 2px #22C55E33; }
+  50% { box-shadow: 0 0 50px 10px #22C55E55; }
+}
+@keyframes glowRed {
+  0%, 100% { box-shadow: 0 0 20px 2px #EF444433; }
+  50% { box-shadow: 0 0 50px 10px #EF444455; }
+}
+@keyframes glowBlue {
+  0%, 100% { box-shadow: 0 0 20px 2px #FFCC0033; }
+  50% { box-shadow: 0 0 50px 10px #FFCC0055; }
+}
+
+.glow-yellow { animation: glowYellow 2.5s ease-in-out infinite; }
+.glow-green  { animation: glowGreen  2.5s ease-in-out infinite; }
+.glow-red    { animation: glowRed    2.5s ease-in-out infinite; }
+.glow-blue   { animation: glowBlue   2.5s ease-in-out infinite; }
+
+/* ── Noise texture overlay ── */
+.noise-bg::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+  opacity: 0.35;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Scanline overlay ── */
+.scanline::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.07) 2px,
+    rgba(0,0,0,0.07) 4px
+  );
+  pointer-events: none;
+}
+
+/* ── Custom select ── */
+.select-custom {
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23FFCC00' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px !important;
+}
+
+/* ── Bracket connector lines (CSS borders) ── */
+.bracket-line-r { border-right: 2px solid #2a2a2a; }
+.bracket-line-l { border-left: 2px solid #2a2a2a; }
+
+/* ── Score flash ── */
+@keyframes scoreFlash {
+  0% { color: #FFCC00; transform: scale(1.2); }
+  100% { color: inherit; transform: scale(1); }
+}
+.score-flash { animation: scoreFlash 0.4s ease-out forwards; }
+
+/* ── Countdown ring ── */
+@keyframes timerTick {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: 283; }
+}
