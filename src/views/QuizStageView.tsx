@@ -3,11 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft, Maximize2, Minimize2, Minus,
-  RadioTower, Zap, SkipForward, Lock, AlertTriangle,
+  RadioTower, Zap, SkipForward, Lock, AlertTriangle, Trophy,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { ROUND_CONFIG } from "@/data/seed";
 import type { RoundType, RoundKey } from "@/types";
+import { FinalsRevealCeremony } from "@/components/shared/FinalsRevealCeremony";
 import RoundOne from "@/components/rounds/RoundOne";
 import RoundTwo from "@/components/rounds/RoundTwo";
 import RoundThree from "@/components/rounds/RoundThree";
@@ -25,7 +26,7 @@ function BuzzPanel() {
   } = useApp();
 
   const { buzzEnabled, buzzedTeamId, lockedOutTeamIds, isStealMode } = broadcast;
-  const isBuzzerRound = currentRound === 2 || currentRound === 5;
+  const isBuzzerRound = currentRound === 4 || currentRound === 5;
   const buzzedTeam = buzzedTeamId ? teams.find((t) => t.id === buzzedTeamId) : null;
 
   if (!isBuzzerRound) return null;
@@ -156,19 +157,23 @@ function BuzzPanel() {
 
 // ── Score sidebar ─────────────────────────────────────────────────────────────
 function ScoreSidebar() {
-  const { groups, teams, scores, hostGroupId, setHostGroupId, activeTeamId, setActiveTeamId, currentRound, addPoints, deductPoints } = useApp();
+  const { groups, teams, scores, hostGroupId, setHostGroupId, activeTeamId, setActiveTeamId, currentRound, addPoints, deductPoints, updateBroadcast } = useApp();
 
   useEffect(() => {
     if (!activeTeamId && hostGroupId) {
-      const g = groups.find(x => x.id === hostGroupId);
-      if (g && g.teamIds.length > 0) {
-        setActiveTeamId(g.teamIds[0]);
+      const gTeams = teams.filter(t => t.groupId === hostGroupId);
+      if (gTeams.length > 0) {
+        setActiveTeamId(gTeams[0].id);
       }
     }
-  }, [activeTeamId, hostGroupId, groups, setActiveTeamId]);
+  }, [activeTeamId, hostGroupId, teams, setActiveTeamId]);
   const roundKey = ROUND_KEYS[currentRound];
   const groupTeams = teams.filter((t) => t.groupId === hostGroupId);
   const ranked = [...groupTeams].sort((a, b) => (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0));
+
+  const displayGroups = hostGroupId === "finals" 
+    ? groups.filter(g => g.id === "finals")
+    : groups.filter(g => g.id !== "finals");
 
   return (
     <div className="flex flex-col gap-4">
@@ -179,9 +184,9 @@ function ScoreSidebar() {
           onChange={(e) => { 
             const newGroupId = e.target.value;
             setHostGroupId(newGroupId); 
-            const g = groups.find(x => x.id === newGroupId);
-            if (g && g.teamIds.length > 0) {
-              setActiveTeamId(g.teamIds[0]);
+            const gTeams = teams.filter(t => t.groupId === newGroupId);
+            if (gTeams.length > 0) {
+              setActiveTeamId(gTeams[0].id);
             } else {
               setActiveTeamId(null);
             }
@@ -189,8 +194,23 @@ function ScoreSidebar() {
           className="select-custom w-full rounded-sm border px-3 py-2 text-xs font-semibold outline-none"
           style={{ background: "#080808", borderColor: "#333", color: "#fff", fontFamily: "var(--font-body)" }}
         >
-          {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          {displayGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
         </select>
+        {hostGroupId !== "finals" && (
+          <button
+            onClick={() => {
+              const currentIndex = displayGroups.findIndex(g => g.id === hostGroupId);
+              const nextGroup = displayGroups[(currentIndex + 1) % displayGroups.length];
+              setHostGroupId(nextGroup.id);
+              const gTeams = teams.filter(t => t.groupId === nextGroup.id);
+              if (gTeams.length > 0) setActiveTeamId(gTeams[0].id);
+            }}
+            className="mt-1 w-full rounded-sm border px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-colors hover:bg-[#FFCC0020]"
+            style={{ borderColor: "#FFCC0040", color: "#FFCC00", fontFamily: "var(--font-mono)", background: "#0A0A0A" }}
+          >
+            Next Group →
+          </button>
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -243,6 +263,21 @@ function ScoreSidebar() {
           </div>
         </motion.div>
       )}
+
+      {hostGroupId === "finals" && (
+        <button
+          onClick={() => {
+            if (confirm("End the tournament and show the podium?")) {
+              updateBroadcast({ drawPhase: "podium_reveal", timerActive: false, buzzEnabled: false });
+            }
+          }}
+          className="mt-8 flex w-full items-center justify-center gap-2 rounded-sm border px-3 py-3 text-[11px] font-black uppercase tracking-widest transition-all hover:bg-[#FFCC0020]"
+          style={{ borderColor: "#FFCC00", color: "#FFCC00", fontFamily: "var(--font-display)", background: "#1a1300" }}
+        >
+          <Trophy size={14} />
+          End Tournament
+        </button>
+      )}
     </div>
   );
 }
@@ -250,7 +285,7 @@ function ScoreSidebar() {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function QuizStageView() {
   const navigate = useNavigate();
-  const { currentRound, setCurrentRound, activeTeamId, setActiveTeamId, hostGroupId, teams, updateBroadcast } = useApp();
+  const { currentRound, setCurrentRound, activeTeamId, setActiveTeamId, hostGroupId, teams, updateBroadcast, broadcast } = useApp();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const groupTeams = teams.filter((t) => t.groupId === hostGroupId);
 
@@ -310,11 +345,11 @@ export default function QuizStageView() {
         </div>
 
         <div className="hidden items-center gap-1 lg:flex">
-          {([1, 2, 3, 4, 5] as RoundType[]).map((r) => (
+          {([1, 2, 3, 4] as RoundType[]).map((r) => (
             <button key={r} onClick={() => {
               setCurrentRound(r);
-              // Clear question from screen so it doesn't persist across rounds
-              updateBroadcast({ questionText: null, questionId: null });
+              // Clear question and timer from screen so they don't persist across rounds
+              updateBroadcast({ questionText: null, questionId: null, timerSecs: 0, timerTotal: 0, timerActive: false, timerLabel: "", buzzEnabled: false, buzzedTeamId: null, lockedOutTeamIds: [], isStealMode: false });
             }}
               className="rounded-sm border px-3 py-1 text-xs font-bold uppercase tracking-widest transition-all"
               style={{
@@ -345,12 +380,12 @@ export default function QuizStageView() {
           <div className="flex flex-col gap-1.5">
             <span className="text-[10px] uppercase tracking-widest" style={{ color: "#FFCC0080", fontFamily: "var(--font-mono)" }}>Round</span>
             <div className="flex flex-col gap-1">
-              {([1, 2, 3, 4, 5] as RoundType[]).map((r) => {
+              {([1, 2, 3, 4] as RoundType[]).map((r) => {
                 const rc = ROUND_CONFIG[r];
                 return (
                   <button key={r} onClick={() => {
                     setCurrentRound(r);
-                    updateBroadcast({ questionText: null, questionId: null });
+                    updateBroadcast({ questionText: null, questionId: null, timerSecs: 0, timerTotal: 0, timerActive: false, timerLabel: "", buzzEnabled: false, buzzedTeamId: null, lockedOutTeamIds: [], isStealMode: false });
                   }}
                     className="flex items-center gap-2 rounded-sm border px-3 py-2 text-left transition-all"
                     style={{ borderColor: currentRound === r ? "#FFCC0060" : "#1a1a1a", background: currentRound === r ? "#0f0e00" : "transparent" }}
@@ -383,7 +418,7 @@ export default function QuizStageView() {
 
           {/* Buzz panel (R4/R5 only) */}
           <BuzzPanel />
-          {(currentRound === 2 || currentRound === 5) && <div className="h-px" style={{ background: "#1a1a1a" }} />}
+          {(currentRound === 4 || currentRound === 5) && <div className="h-px" style={{ background: "#1a1a1a" }} />}
 
           <ScoreSidebar />
         </aside>
@@ -400,10 +435,10 @@ export default function QuizStageView() {
               className="flex h-full flex-col"
             >
               {currentRound === 1 && <RoundOne />}
-              {currentRound === 2 && <RoundFour />}
-              {currentRound === 3 && <RoundTwo />}
-              {currentRound === 4 && <RoundThree />}
-              {currentRound === 5 && <RoundFive />}
+              {currentRound === 2 && <RoundTwo />}
+              {currentRound === 3 && <RoundThree />}
+              {currentRound === 4 && <RoundFive />}
+              {currentRound === 5 && <RoundFour />}
             </motion.div>
           </AnimatePresence>
         </main>

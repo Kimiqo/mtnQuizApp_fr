@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { LogOut, Trophy, RadioTower, Zap, ArrowRight, Star } from "lucide-react";
 import { useApp } from "@/context/AppContext";
-import { ROUND_CONFIG, TEAMS } from "@/data/seed";
+import { ROUND_CONFIG, TEAMS, playSound } from "@/data/seed";
+import { GroupDrawCeremony } from "@/components/shared/GroupDrawCeremony";
+import { FinalsRevealCeremony } from "@/components/shared/FinalsRevealCeremony";
+import PodiumCeremony from "@/components/shared/PodiumCeremony";
 
 function AudienceTimer() {
   const { broadcast } = useApp();
@@ -71,20 +74,24 @@ function AnimatedLeaderboard({ groupId }: { groupId: string }) {
           : "0%";
 
         const isFloorTeam = team.id === activeFloorTeamId;
+        const isFlashTarget = broadcast.flashFeedback?.teamId === team.id;
+        const flashType = broadcast.flashFeedback?.type;
+        const isCorrect = isFlashTarget && flashType === "correct";
+        const isWrong = isFlashTarget && flashType === "wrong";
 
         return (
           <motion.div
             key={team.id}
             layout
             initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: i * 0.05, duration: 0.4 }}
+            animate={isFlashTarget ? { opacity: 1, x: 0, scale: [1, 1.05, 1, 1.05, 1] } : { opacity: 1, x: 0, scale: 1 }}
+            transition={{ delay: isFlashTarget ? 0 : i * 0.05, duration: 0.4 }}
             className="relative overflow-hidden rounded-sm border"
             style={{
-              borderColor: isFloorTeam ? "#FFCC00" : isFirst ? "#FFCC0060" : "#1e1e1e",
-              background: isFloorTeam ? "#FFCC0020" : isFirst ? "#0f0e00" : "#0A0A0A",
+              borderColor: isCorrect ? "#22c55e" : isWrong ? "#ef4444" : isFloorTeam ? "#FFCC00" : isFirst ? "#FFCC0060" : "#1e1e1e",
+              background: isCorrect ? "#22c55e20" : isWrong ? "#ef444420" : isFloorTeam ? "#FFCC0020" : isFirst ? "#0f0e00" : "#0A0A0A",
               minHeight: "54px",
-              boxShadow: isFloorTeam ? "0 0 20px 2px #FFCC0040" : "none",
+              boxShadow: isCorrect ? "0 0 30px 4px #22c55e40" : isWrong ? "0 0 30px 4px #ef444440" : isFloorTeam ? "0 0 20px 2px #FFCC0040" : "none",
             }}
           >
             {/* Score bar */}
@@ -128,7 +135,7 @@ function AnimatedLeaderboard({ groupId }: { groupId: string }) {
 function GroupCard({ groupId, isActive, onClick }: { groupId: string; isActive?: boolean; onClick?: () => void; }) {
   const { groups, teams, scores } = useApp();
   const group = groups.find((g) => g.id === groupId)!;
-  const groupTeams = teams.filter((t) => t.groupId === groupId);
+  const groupTeams = teams.filter((t) => (t.originalGroupId || t.groupId) === groupId);
   const ranked = [...groupTeams].sort((a, b) => (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0));
 
   return (
@@ -178,10 +185,11 @@ function BracketConnector({ side }: { side: "left" | "right" }) {
 
 function GrandFinalBox() {
   const { groups, teams, scores } = useApp();
-  const winners = groups.map((g) => {
-    const groupTeams = teams.filter((t) => t.groupId === g.id);
+  const winners = groups.filter(g => g.id !== "finals").map((g) => {
+    const groupTeams = teams.filter((t) => (t.originalGroupId || t.groupId) === g.id);
+    if (groupTeams.length === 0) return null;
     return groupTeams.reduce((top, t) => ((scores[t.id]?.total ?? 0) > (scores[top.id]?.total ?? 0) ? t : top), groupTeams[0]);
-  });
+  }).filter(Boolean) as import("@/types").Team[];
   const allZero = winners.every((w) => (scores[w.id]?.total ?? 0) === 0);
 
   return (
@@ -209,7 +217,38 @@ export default function AudienceView() {
   const { logout, broadcast, currentRound, groups, hostGroupId, teams, scores } = useApp();
   const [tab, setTab] = useState<"quiz" | "scoreboard">("quiz");
   const roundConfig = ROUND_CONFIG[currentRound];
-  const buzzedTeam = broadcast.buzzedTeamId ? TEAMS.find((t) => t.id === broadcast.buzzedTeamId) : null;
+  const buzzedTeam = teams.find(t => t.id === broadcast.buzzedTeamId);
+
+  // Sound effect for flash feedback
+  useEffect(() => {
+    if (broadcast.flashFeedback) {
+      playSound(broadcast.flashFeedback.type);
+    }
+  }, [broadcast.flashFeedback]);
+
+  if (broadcast.drawPhase === "revealing_finals") {
+    return (
+      <div className="flex h-screen w-full bg-black">
+        <FinalsRevealCeremony />
+      </div>
+    );
+  }
+
+  if (broadcast.drawPhase === "podium_reveal") {
+    return (
+      <div className="flex h-screen w-full bg-black">
+        <PodiumCeremony />
+      </div>
+    );
+  }
+
+  if (broadcast.drawPhase !== "done") {
+    return (
+      <div className="flex h-screen w-full items-center justify-center p-8 bg-black">
+        <GroupDrawCeremony />
+      </div>
+    );
+  }
 
   // Auto-pick the group with highest activity (most points total)
   const activeGroup = groups.find((g) => g.id === hostGroupId) ?? groups[0];
@@ -343,11 +382,15 @@ export default function AudienceView() {
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-                    className="scanline relative flex flex-1 flex-col overflow-hidden rounded-sm border glow-yellow"
-                    style={{ borderColor: "#FFCC0050", background: "#0A0A0A" }}
+                    className={`scanline relative flex flex-1 flex-col overflow-hidden rounded-sm border ${!broadcast.flashFeedback ? "glow-yellow" : ""}`}
+                    style={{ 
+                      borderColor: broadcast.flashFeedback?.type === "correct" ? "#22c55e" : broadcast.flashFeedback?.type === "wrong" ? "#ef4444" : "#FFCC0050", 
+                      background: broadcast.flashFeedback?.type === "correct" ? "#22c55e15" : broadcast.flashFeedback?.type === "wrong" ? "#ef444415" : "#0A0A0A",
+                      boxShadow: broadcast.flashFeedback?.type === "correct" ? "0 0 80px 16px #22c55e30" : broadcast.flashFeedback?.type === "wrong" ? "0 0 80px 16px #ef444430" : undefined
+                    }}
                   >
                     <motion.div className="h-1.5 shrink-0" initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: 0.7 }}
-                      style={{ background: "#FFCC00", transformOrigin: "left" }}
+                      style={{ background: broadcast.flashFeedback?.type === "correct" ? "#22c55e" : broadcast.flashFeedback?.type === "wrong" ? "#ef4444" : "#FFCC00", transformOrigin: "left" }}
                     />
                     <div className="flex flex-1 items-center px-10 py-8">
                       <motion.p
@@ -371,22 +414,32 @@ export default function AudienceView() {
               {buzzedTeam && (
                 <motion.div
                   initial={{ opacity: 0, y: 12, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  animate={{ 
+                    opacity: 1, 
+                    y: 0, 
+                    scale: broadcast.flashFeedback?.teamId === buzzedTeam.id ? [1, 1.05, 1, 1.05, 1] : 1,
+                    transition: { duration: broadcast.flashFeedback ? 0.4 : 0.4, ease: [0.22, 1, 0.36, 1] } 
+                  }}
                   exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
                   className="shrink-0 flex items-center justify-center gap-4 rounded-sm border py-5"
                   style={{
-                    borderColor: "#FFCC0060",
-                    background: "#0f0e00",
-                    boxShadow: "0 0 60px 8px #FFCC0020",
+                    borderColor: broadcast.flashFeedback?.teamId === buzzedTeam.id 
+                                 ? (broadcast.flashFeedback.type === "correct" ? "#22c55e" : "#ef4444") 
+                                 : "#FFCC0060",
+                    background: broadcast.flashFeedback?.teamId === buzzedTeam.id
+                                 ? (broadcast.flashFeedback.type === "correct" ? "#22c55e15" : "#ef444415")
+                                 : "#0f0e00",
+                    boxShadow: broadcast.flashFeedback?.teamId === buzzedTeam.id
+                                 ? (broadcast.flashFeedback.type === "correct" ? "0 0 80px 16px #22c55e30" : "0 0 80px 16px #ef444430")
+                                 : "0 0 60px 8px #FFCC0020",
                   }}
                 >
-                  <Zap size={24} style={{ color: "#FFCC00" }} />
+                  <Zap size={24} style={{ color: broadcast.flashFeedback?.teamId === buzzedTeam.id ? (broadcast.flashFeedback.type === "correct" ? "#4ade80" : "#f87171") : "#FFCC00" }} />
                   <div className="text-center">
-                    <p className="text-[11px] uppercase tracking-widest" style={{ color: "#FFCC0080", fontFamily: "var(--font-mono)" }}>
+                    <p className="text-[11px] uppercase tracking-widest" style={{ color: broadcast.flashFeedback?.teamId === buzzedTeam.id ? (broadcast.flashFeedback.type === "correct" ? "#4ade8080" : "#f8717180") : "#FFCC0080", fontFamily: "var(--font-mono)" }}>
                       Buzzed In
                     </p>
-                    <p className="font-black uppercase tracking-wide" style={{ fontFamily: "var(--font-display)", fontSize: "clamp(24px,4vw,44px)", color: "#FFCC00" }}>
+                    <p className="font-black uppercase tracking-wide" style={{ fontFamily: "var(--font-display)", fontSize: "clamp(24px,4vw,44px)", color: broadcast.flashFeedback?.teamId === buzzedTeam.id ? (broadcast.flashFeedback.type === "correct" ? "#4ade80" : "#f87171") : "#FFCC00" }}>
                       {buzzedTeam.name}
                     </p>
                   </div>
@@ -424,8 +477,8 @@ export default function AudienceView() {
               <p className="text-[10px] uppercase tracking-widest" style={{ color: "#444", fontFamily: "var(--font-mono)" }}>
                 All Groups — Top Score
               </p>
-              {groups.map((g) => {
-                const top = [...teams.filter((t) => t.groupId === g.id)]
+              {groups.filter(g => g.id !== "finals").map((g) => {
+                const top = [...teams.filter((t) => (t.originalGroupId || t.groupId) === g.id)]
                   .sort((a, b) => (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0))[0];
                 const pts = top ? (scores[top.id]?.total ?? 0) : 0;
                 return (
@@ -450,7 +503,7 @@ export default function AudienceView() {
             <div className="flex items-center justify-center gap-8 max-w-4xl mx-auto">
               {/* Left groups */}
               <div className="flex flex-col gap-3 w-72">
-                {groups.map((g) => (
+                {groups.filter(g => g.id !== "finals").map((g) => (
                   <GroupCard key={g.id} groupId={g.id} isActive={activeGroup.id === g.id} />
                 ))}
               </div>
@@ -464,12 +517,12 @@ export default function AudienceView() {
           <div className="h-px shrink-0 w-full mb-2 max-w-5xl mx-auto" style={{ background: "#1a1a1a" }} />
 
           <div className="max-w-5xl mx-auto w-full flex flex-col gap-8">
-            {groups.map((g) => {
-            const groupTeams = teams.filter((t) => t.groupId === g.id);
+            {groups.filter(g => g.id !== "finals").map((g) => {
+            const groupTeams = teams.filter((t) => (t.originalGroupId || t.groupId) === g.id);
             const ranked = [...groupTeams].sort(
               (a, b) => (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0)
             );
-            const roundKeys = ["r1", "r2", "r3", "r4", "r5"] as const;
+            const roundKeys = ["r1", "r2", "r3", "r4"] as const;
 
             return (
               <div key={g.id} className="flex flex-col gap-2">

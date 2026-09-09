@@ -6,7 +6,8 @@ export type UserRole = "host" | "team" | "audience";
 export interface Team {
   id: string;
   name: string;
-  groupId: string;
+  groupId: string | null;
+  originalGroupId?: string | null;
   password: string;
 }
 
@@ -90,4 +91,14 @@ export interface BroadcastState {
   timerTotal: number;
   timerActive: boolean;
   timerLabel: string; // "DISCUSSION" | "CLUE" | "STEAL" | ""
+
+  // Group Draw Ceremony
+  drawPhase: "idle" | "awaiting" | "shuffling" | "revealing" | "done" | "revealing_finals" | "podium_reveal";
+  drawRevealedGroups: number;
+
+  // Dataset Toggle
+  useTestData: boolean;
+
+  // Visual Feedback
+  flashFeedback: { teamId: string; type: "correct" | "wrong" } | null;
 }

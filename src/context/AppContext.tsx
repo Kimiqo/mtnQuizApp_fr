@@ -20,24 +20,20 @@ import type {
 import {
   TEAMS,
   GROUPS,
-  HOST_ID,
-  HOST_PASSWORD,
   INITIAL_QUESTIONS,
   INITIAL_BROADCAST,
-  STEAL_TIMER_SECS,
   buildInitialScores,
   playSound,
 } from "@/data/seed";
+import { socket } from "@/lib/socket";
 
 interface AppContextType {
   // ── Auth ──────────────────────────────────────────────────────────────────
   currentTeam: Team | null;
   userRole: "host" | "team" | "audience" | null;
-  login: (teamId: string, password: string) => boolean;
+  login: (teamId: string, password: string) => Promise<boolean>;
   loginAudience: () => void;
   logout: () => void;
-
-  // ── Navigation ────────────────────────────────────────────────────────────
 
   // ── Data ──────────────────────────────────────────────────────────────────
   teams: Team[];
@@ -65,7 +61,8 @@ interface AppContextType {
   scores: Record<string, TeamScore>;
   addPoints: (teamId: string, points: number, round: RoundKey) => void;
   deductPoints: (teamId: string, points: number, round: RoundKey) => void;
-
+  toggleDataset: () => void;
+  flashTeam: (teamId: string, type: "correct" | "wrong") => void;
   // ── Broadcast state (host writes → contestant/audience read) ─────────────
   broadcast: BroadcastState;
   updateBroadcast: (update: Partial<BroadcastState>) => void;
@@ -88,136 +85,61 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | null>(null);
 
-function useSharedState<T>(key: string, initialValue: T) {
-  const [state, setState] = useState<T>(() => {
-    try {
-      const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : initialValue;
-    } catch {
-      return initialValue;
-    }
-  });
-
-  const setSharedState = useCallback((value: React.SetStateAction<T>) => {
-    setState((prev) => {
-      const nextValue = value instanceof Function ? value(prev) : value;
-      try {
-        window.localStorage.setItem(key, JSON.stringify(nextValue));
-      } catch (e) {
-        console.error("Storage error", e);
-      }
-      return nextValue;
-    });
-  }, [key]);
-
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === key && e.newValue) {
-        try {
-          setState(JSON.parse(e.newValue));
-        } catch {
-          // ignore
-        }
-      }
-    };
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
-  }, [key]);
-
-  return [state, setSharedState] as const;
-}
-
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [currentTeam, setCurrentTeam] = useSharedState<Team | null>("mtn_currentTeam", null);
-  const [userRole, setUserRole] = useSharedState<"host" | "team" | "audience" | null>("mtn_userRole", null);
-  
-  const [hostGroupId, setHostGroupId] = useSharedState("mtn_hostGroupId", "g1");
-  const [currentRound, setCurrentRound] = useSharedState<RoundType>("mtn_currentRound", 1);
-  const [activeTeamId, setActiveTeamId] = useSharedState<string | null>("mtn_activeTeamId", null);
+  // Client-local Auth state
+  const [currentTeam, setCurrentTeam] = useState<Team | null>(null);
+  const [userRole, setUserRole] = useState<"host" | "team" | "audience" | null>(null);
 
-  useEffect(() => {
-    if (userRole === "host" || userRole === "audience") {
-      const group = GROUPS.find((g) => g.id === hostGroupId);
-      if (group && (!activeTeamId || !group.teamIds.includes(activeTeamId))) {
-        setActiveTeamId(group.teamIds[0] ?? null);
-      }
-    }
-  }, [hostGroupId, activeTeamId, userRole, setActiveTeamId]);
-
-  const advanceToNextTeam = useCallback(() => {
-    if (!activeTeamId) return;
-    const groupIndex = GROUPS.findIndex(g => g.id === hostGroupId);
-    if (groupIndex === -1) return;
-    const group = GROUPS[groupIndex];
-    const currentIndex = group.teamIds.indexOf(activeTeamId);
-    if (currentIndex === -1) return;
-    
-    const nextIndex = (currentIndex + 1) % group.teamIds.length;
-    if (nextIndex === 0) {
-      const nextGroupIndex = (groupIndex + 1) % GROUPS.length;
-      const nextGroup = GROUPS[nextGroupIndex];
-      setHostGroupId(nextGroup.id);
-      setActiveTeamId(nextGroup.teamIds[0] ?? null);
-    } else {
-      setActiveTeamId(group.teamIds[nextIndex]);
-    }
-  }, [activeTeamId, hostGroupId, setHostGroupId, setActiveTeamId]);
-
-  const [questions, setQuestions] = useSharedState<QuestionBank>("mtn_questions", INITIAL_QUESTIONS);
-  const [scores, setScores] = useSharedState<Record<string, TeamScore>>("mtn_scores", buildInitialScores());
-  const [broadcast, setBroadcast] = useSharedState<BroadcastState>("mtn_broadcast", { ...INITIAL_BROADCAST });
-
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Derived
-  const currentGroup = useMemo(() => {
-    if (currentTeam) return GROUPS.find((g) => g.id === currentTeam.groupId) ?? null;
-    if (userRole === "host" || userRole === "audience")
-      return GROUPS.find((g) => g.id === hostGroupId) ?? null;
-    return null;
-  }, [currentTeam, userRole, hostGroupId]);
-
-  // ── Auth ────────────────────────────────────────────────────────────────
-  const login = useCallback((teamId: string, password: string): boolean => {
-    if (teamId === HOST_ID && password === HOST_PASSWORD) {
-      setUserRole("host");
-      setCurrentTeam(null);
-      return true;
-    }
-    const team = TEAMS.find((t) => t.id === teamId);
-    if (team && password === team.password) {
-      setCurrentTeam(team);
-      setUserRole("team");
-      return true;
-    }
-    return false;
-  }, []);
-
-  const loginAudience = useCallback(() => {
-    setUserRole("audience");
-    setCurrentTeam(null);
-  }, []);
-
-  const logout = useCallback(() => {
-    setCurrentTeam(null);
-    setUserRole(null);
-  }, []);
-
-  const resetQuizData = useCallback(() => {
-    if (confirm("Are you sure you want to completely reset the quiz? All points and state will be lost.")) {
-      Object.keys(window.localStorage).forEach((key) => {
-        if (key.startsWith("mtn_")) {
-          window.localStorage.removeItem(key);
-        }
-      });
-      // Navigate to root to force a clean re-login
-      window.location.href = "/";
-    }
-  }, []);
+  // Synced state
+  const [hostGroupId, setHostGroupIdState] = useState("g1");
+  const [currentRound, setCurrentRoundState] = useState<RoundType>(1);
+  const [activeTeamId, setActiveTeamIdState] = useState<string | null>(null);
+  const [questions, setQuestions] = useState<QuestionBank>(INITIAL_QUESTIONS);
+  const [scores, setScores] = useState<Record<string, TeamScore>>(buildInitialScores());
+  const [teams, setTeams] = useState<Team[]>(TEAMS);
+  const [broadcast, setBroadcast] = useState<BroadcastState>({ ...INITIAL_BROADCAST });
 
   const prevBroadcast = useRef(broadcast);
   const prevScores = useRef(scores);
 
+  // --- Socket Sync ---
+  useEffect(() => {
+    const onStateSync = (state: any) => {
+      setHostGroupIdState(state.hostGroupId);
+      setCurrentRoundState(state.currentRound);
+      setActiveTeamIdState(state.activeTeamId);
+      if (state.questions) setQuestions(state.questions);
+      if (state.scores) setScores(state.scores);
+      if (state.broadcast) setBroadcast(state.broadcast);
+      if (state.teams) setTeams(state.teams);
+    };
+
+    const onBroadcastUpdate = (updatedBroadcast: BroadcastState) => {
+      setBroadcast(updatedBroadcast);
+    };
+
+    const onScoresUpdate = (updatedScores: Record<string, TeamScore>) => {
+      setScores(updatedScores);
+    };
+
+    const onTeamsUpdate = (updatedTeams: Team[]) => {
+      setTeams(updatedTeams);
+    };
+
+    socket.on("state:sync", onStateSync);
+    socket.on("broadcast:update", onBroadcastUpdate);
+    socket.on("scores:update", onScoresUpdate);
+    socket.on("teams:update", onTeamsUpdate);
+
+    return () => {
+      socket.off("state:sync", onStateSync);
+      socket.off("broadcast:update", onBroadcastUpdate);
+      socket.off("scores:update", onScoresUpdate);
+      socket.off("teams:update", onTeamsUpdate);
+    };
+  }, []);
+
+  // --- Sound Effects ---
   useEffect(() => {
     const prev = prevBroadcast.current;
     if (!prev.buzzEnabled && broadcast.buzzEnabled) playSound("buzz");
@@ -239,156 +161,180 @@ export function AppProvider({ children }: { children: ReactNode }) {
     prevScores.current = scores;
   }, [scores]);
 
+  // Derived
+  const currentGroup = useMemo(() => {
+    if (currentTeam) return GROUPS.find((g) => g.id === currentTeam.groupId) ?? null;
+    if (userRole === "host" || userRole === "audience")
+      return GROUPS.find((g) => g.id === hostGroupId) ?? null;
+    return null;
+  }, [currentTeam, userRole, hostGroupId]);
+
+  // ── Auth ────────────────────────────────────────────────────────────────
+  // Auto-reconnect using saved session token on mount
+  useEffect(() => {
+    const savedToken = localStorage.getItem("quiz_session_token");
+    if (!savedToken) return;
+
+    socket.emit("auth", { token: savedToken }, (res: any) => {
+      if (res.success) {
+        if (res.role === "host") {
+          setUserRole("host");
+          setCurrentTeam(null);
+        } else if (res.role === "team") {
+          const team = TEAMS.find((t) => t.id === res.teamId);
+          setCurrentTeam(team || null);
+          setUserRole("team");
+        } else if (res.role === "audience") {
+          setUserRole("audience");
+          setCurrentTeam(null);
+        }
+      } else {
+        // Token expired or invalid — clear it
+        localStorage.removeItem("quiz_session_token");
+      }
+    });
+  }, []);
+
+  const login = useCallback(async (teamId: string, password: string): Promise<boolean> => {
+    const role = teamId === "host" ? "host" : "team";
+    return new Promise((resolve) => {
+      socket.emit("auth", { role, teamId, password }, (res: any) => {
+        if (res.success) {
+          // Save session token for reconnection
+          if (res.token) localStorage.setItem("quiz_session_token", res.token);
+          if (role === "host") {
+            setUserRole("host");
+            setCurrentTeam(null);
+          } else {
+            const team = TEAMS.find((t) => t.id === teamId);
+            setCurrentTeam(team || null);
+            setUserRole("team");
+          }
+          resolve(true);
+        } else {
+          resolve(false);
+        }
+      });
+    });
+  }, []);
+
+  const loginAudience = useCallback(() => {
+    socket.emit("auth", { role: "audience" }, (res: any) => {
+      if (res.success) {
+        if (res.token) localStorage.setItem("quiz_session_token", res.token);
+        setUserRole("audience");
+        setCurrentTeam(null);
+      }
+    });
+  }, []);
+
+  const logout = useCallback(() => {
+    localStorage.removeItem("quiz_session_token");
+    setCurrentTeam(null);
+    setUserRole(null);
+    socket.disconnect();
+    socket.connect(); // Reconnect as anonymous
+  }, []);
+
+  const toggleDataset = useCallback(() => socket.emit("host:toggle-dataset"), []);
+
+  // ── State Emitters (Host) ────────────────────────────────────────────────
+  const setHostGroupId = useCallback((groupId: string) => {
+    socket.emit("host:round", { groupId });
+  }, []);
+
+  const setCurrentRound = useCallback((round: RoundType) => {
+    socket.emit("host:round", { round });
+  }, []);
+
+  const setActiveTeamId = useCallback((teamId: string | null) => {
+    socket.emit("host:round", { teamId });
+  }, []);
+
+  const advanceToNextTeam = useCallback(() => {
+    if (!activeTeamId) return;
+    const groupTeams = teams.filter(t => t.groupId === hostGroupId);
+    if (groupTeams.length === 0) return;
+    const currentIndex = groupTeams.findIndex(t => t.id === activeTeamId);
+    if (currentIndex === -1) return;
+    
+    // Always stay within the same group — wrap back to Team 1
+    const nextIndex = (currentIndex + 1) % groupTeams.length;
+    socket.emit("host:round", { teamId: groupTeams[nextIndex].id });
+  }, [activeTeamId, hostGroupId, teams]);
+
   // ── Questions ────────────────────────────────────────────────────────────
-  const markR1Used = useCallback((id: number) => {
-    setQuestions((p) => ({ ...p, round1: p.round1.map((q) => q.id === id ? { ...q, isUsed: true } : q) }));
-  }, []);
-  const markR3Used = useCallback((id: number) => {
-    setQuestions((p) => ({ ...p, round3: p.round3.map((q) => q.id === id ? { ...q, isUsed: true } : q) }));
-  }, []);
-  const markR4Used = useCallback((id: number) => {
-    setQuestions((p) => ({ ...p, round4: p.round4.map((q) => q.id === id ? { ...q, isUsed: true } : q) }));
-  }, []);
-  const markR5Used = useCallback((id: number) => {
-    setQuestions((p) => ({ ...p, round5: p.round5.map((q) => q.id === id ? { ...q, isUsed: true } : q) }));
-  }, []);
-  const resetQuestions = useCallback(() => setQuestions(INITIAL_QUESTIONS), []);
+  const markR1Used = useCallback((id: number) => socket.emit("host:question", { action: "mark-used", roundKey: "round1", questionId: id }), []);
+  const markR3Used = useCallback((id: number) => socket.emit("host:question", { action: "mark-used", roundKey: "round3", questionId: id }), []);
+  const markR4Used = useCallback((id: number) => socket.emit("host:question", { action: "mark-used", roundKey: "round4", questionId: id }), []);
+  const markR5Used = useCallback((id: number) => socket.emit("host:question", { action: "mark-used", roundKey: "round5", questionId: id }), []);
+  const resetQuestions = useCallback(() => socket.emit("host:reset"), []);
 
   // ── Scores ────────────────────────────────────────────────────────────────
   const addPoints = useCallback((teamId: string, pts: number, round: RoundKey) => {
-    setScores((p) => {
-      const e = p[teamId] ?? { total: 0, byRound: { r1: 0, r2: 0, r3: 0, r4: 0, r5: 0 } };
-      return { ...p, [teamId]: { total: e.total + pts, byRound: { ...e.byRound, [round]: (e.byRound[round] ?? 0) + pts } } };
-    });
+    socket.emit("host:score", { action: "add", teamId, pts, round });
   }, []);
   const deductPoints = useCallback((teamId: string, pts: number, round: RoundKey) => {
-    setScores((p) => {
-      const e = p[teamId] ?? { total: 0, byRound: { r1: 0, r2: 0, r3: 0, r4: 0, r5: 0 } };
-      return {
-        ...p,
-        [teamId]: {
-          total: Math.max(0, e.total - pts),
-          byRound: { ...e.byRound, [round]: Math.max(0, (e.byRound[round] ?? 0) - pts) },
-        },
-      };
-    });
+    socket.emit("host:score", { action: "deduct", teamId, pts, round });
+  }, []);
+  const flashTeam = useCallback((teamId: string, type: "correct" | "wrong") => {
+    socket.emit("host:flash", { teamId, type });
   }, []);
 
   // ── Broadcast ─────────────────────────────────────────────────────────────
   const updateBroadcast = useCallback((update: Partial<BroadcastState>) => {
-    setBroadcast((p) => ({ ...p, ...update }));
+    socket.emit("host:broadcast", update);
   }, []);
 
   // ── Timer ─────────────────────────────────────────────────────────────────
   const startTimer = useCallback((secs: number, label: string) => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    setBroadcast((p) => ({ ...p, timerSecs: secs, timerTotal: secs, timerActive: true, timerLabel: label }));
-    timerRef.current = setInterval(() => {
-      setBroadcast((p) => {
-        if (!p.timerActive || p.timerSecs <= 1) {
-          clearInterval(timerRef.current!);
-          return { ...p, timerSecs: 0, timerActive: false };
-        }
-        return { ...p, timerSecs: p.timerSecs - 1 };
-      });
-    }, 1000);
+    socket.emit("host:timer", { action: "start", secs, label });
   }, []);
-
   const stopTimer = useCallback(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    setBroadcast((p) => ({ ...p, timerActive: false }));
+    socket.emit("host:timer", { action: "stop" });
   }, []);
-
   const resetTimer = useCallback((secs: number) => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    setBroadcast((p) => ({ ...p, timerSecs: secs, timerActive: false }));
+    socket.emit("host:timer", { action: "reset", secs });
   }, []);
 
   // ── Buzz mechanics ────────────────────────────────────────────────────────
-  const enableBuzz = useCallback(() => {
-    setBroadcast((p) => ({ ...p, buzzEnabled: true }));
+  const enableBuzz = useCallback(() => socket.emit("host:buzz-control", { action: "enable" }), []);
+  const disableBuzz = useCallback(() => socket.emit("host:buzz-control", { action: "disable" }), []);
+  const teamBuzz = useCallback((teamId: string) => socket.emit("buzz", { teamId }), []);
+  const lockoutTeam = useCallback((teamId: string) => socket.emit("host:buzz-control", { action: "lockout", teamId }), []);
+  const passQuestion = useCallback(() => socket.emit("host:buzz-control", { action: "pass" }), []);
+  const awardBuzzedTeam = useCallback((pts: number) => socket.emit("host:buzz-control", { action: "award", pts }), []);
+  const clearBuzzState = useCallback(() => socket.emit("host:buzz-control", { action: "clear" }), []);
+
+  const resetQuizData = useCallback(() => {
+    if (confirm("Are you sure you want to completely reset the quiz? All points and state will be lost.")) {
+      socket.emit("host:reset");
+      // Navigate to root to force a clean re-login
+      window.location.href = "/";
+    }
   }, []);
-
-  const disableBuzz = useCallback(() => {
-    setBroadcast((p) => ({ ...p, buzzEnabled: false }));
-  }, []);
-
-  const teamBuzz = useCallback((teamId: string) => {
-    setBroadcast((p) => {
-      if (!p.buzzEnabled || p.buzzedTeamId || p.lockedOutTeamIds.includes(teamId)) return p;
-      // Only allow teams in the active group to buzz
-      const team = TEAMS.find((t) => t.id === teamId);
-      if (hostGroupId && team?.groupId !== hostGroupId) return p;
-      if (timerRef.current) clearInterval(timerRef.current); // pause steal/clue timer
-      return { ...p, buzzedTeamId: teamId, timerActive: false };
-    });
-  }, [hostGroupId]);
-
-  const lockoutTeam = useCallback((teamId: string) => {
-    setBroadcast((p) => ({
-      ...p,
-      lockedOutTeamIds: p.lockedOutTeamIds.includes(teamId) ? p.lockedOutTeamIds : [...p.lockedOutTeamIds, teamId],
-      buzzedTeamId: p.buzzedTeamId === teamId ? null : p.buzzedTeamId,
-    }));
-  }, []);
-
-  const passQuestion = useCallback(() => {
-    setBroadcast((p) => ({
-      ...p,
-      lockedOutTeamIds: p.buzzedTeamId && !p.lockedOutTeamIds.includes(p.buzzedTeamId)
-        ? [...p.lockedOutTeamIds, p.buzzedTeamId]
-        : p.lockedOutTeamIds,
-      buzzedTeamId: null,
-      isStealMode: true,
-    }));
-    startTimer(STEAL_TIMER_SECS, "STEAL");
-  }, [startTimer]);
-
-  const awardBuzzedTeam = useCallback((pts: number) => {
-    setBroadcast((p) => {
-      if (p.buzzedTeamId) {
-        const rk = `r${p.round ?? 1}` as RoundKey;
-        addPoints(p.buzzedTeamId, pts, rk);
-      }
-      return { ...p, buzzedTeamId: null, buzzEnabled: false, isStealMode: false };
-    });
-  }, [addPoints]);
-
-  const clearBuzzState = useCallback(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    setBroadcast((p) => ({
-      ...p,
-      buzzEnabled: false,
-      buzzedTeamId: null,
-      lockedOutTeamIds: [],
-      isStealMode: false,
-      timerActive: false,
-    }));
-  }, []);
-
-  // Cleanup on unmount
-  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
   const value = useMemo<AppContextType>(() => ({
     currentTeam, userRole, login, loginAudience, logout,
-    teams: TEAMS, groups: GROUPS, currentGroup,
+    teams, groups: GROUPS, currentGroup,
     hostGroupId, setHostGroupId,
     currentRound, setCurrentRound,
     activeTeamId, setActiveTeamId, advanceToNextTeam,
     questions, markR1Used, markR3Used, markR4Used, markR5Used, resetQuestions,
     scores, addPoints, deductPoints,
+    flashTeam, toggleDataset,
     broadcast, updateBroadcast,
     startTimer, stopTimer, resetTimer,
     enableBuzz, disableBuzz, teamBuzz, lockoutTeam, passQuestion, awardBuzzedTeam, clearBuzzState,
     resetQuizData,
   }), [
     currentTeam, userRole, login, loginAudience, logout,
-    currentGroup, hostGroupId,
-    currentRound, activeTeamId,
+    currentGroup, hostGroupId, setHostGroupId,
+    currentRound, setCurrentRound, activeTeamId, setActiveTeamId, advanceToNextTeam,
     questions, scores, broadcast,
     updateBroadcast, startTimer, stopTimer, resetTimer,
     markR1Used, markR3Used, markR4Used, markR5Used, resetQuestions,
-    addPoints, deductPoints,
+    addPoints, deductPoints, flashTeam, toggleDataset,
     enableBuzz, disableBuzz, teamBuzz, lockoutTeam, passQuestion, awardBuzzedTeam, clearBuzzState,
     resetQuizData,
   ]);

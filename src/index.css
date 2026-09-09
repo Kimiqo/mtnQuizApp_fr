@@ -81,6 +81,15 @@ body {
   z-index: 0;
 }
 
+.noise-bg::after {
+  content: "";
+  position: absolute; inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400'><text x='50%25' y='40%25' dominant-baseline='middle' text-anchor='middle' transform='rotate(-30, 200, 200)' fill='%23FFCC00' fill-opacity='0.015' font-family='sans-serif' font-size='32' font-weight='900' letter-spacing='4'>MTN DIGIFEST 2026</text><text x='50%25' y='60%25' dominant-baseline='middle' text-anchor='middle' transform='rotate(-30, 200, 200)' fill='%23FFCC00' fill-opacity='0.01' font-family='sans-serif' font-size='24' font-weight='bold' letter-spacing='2'>MTN AI QUIZ</text></svg>");
+  background-repeat: repeat;
+  z-index: 0;
+}
+
 /* ── Scanline overlay ── */
 .scanline::after {
   content: '';

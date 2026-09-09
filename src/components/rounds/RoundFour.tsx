@@ -5,7 +5,7 @@ import { useApp } from "@/context/AppContext";
 import { useHostShortcuts, HostDrawButton, HostAnswerControls } from "@/components/shared/HostControls";
 import { playSound } from "@/data/seed";
 
-const SHUFFLE_MS = 3500;
+const SHUFFLE_MS = parseInt(import.meta.env.VITE_SHUFFLE_MS || "1500", 10);
 const SHUFFLE_INTERVAL = 120;
 const SHUFFLE_PHRASES = [
   "Scanning question bank...", "Randomizing selection...", "Calculating probability...",
@@ -58,9 +58,8 @@ export default function RoundFour() {
   const toggleAnswer = useCallback(() => {
     if (!currentQ || isShuffling) return;
     setShowAnswer((p) => !p);
-    disableBuzz();
     playSound("answer");
-  }, [currentQ, isShuffling, disableBuzz]);
+  }, [currentQ, isShuffling]);
 
   const handleCorrect = useCallback(() => {
     if (!currentQ || !showAnswer || !broadcast.buzzedTeamId) return;

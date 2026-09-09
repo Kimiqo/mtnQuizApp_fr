@@ -1,8 +1,10 @@
-import { motion } from "framer-motion";
+import { useState, useEffect, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { LogOut, Zap, Trophy, ArrowRight, RadioTower, Star } from "lucide-react";
+import { LogOut, Zap, Trophy, ArrowRight, RadioTower, Star, Shuffle, Play } from "lucide-react";
 import { useApp } from "@/context/AppContext";
-import { ROUND_CONFIG } from "@/data/seed";
+import { ROUND_CONFIG, TEAMS, playSound } from "@/data/seed";
+import { GroupDrawCeremony } from "@/components/shared/GroupDrawCeremony";
 
 function GroupCard({
   groupId,
@@ -13,9 +15,9 @@ function GroupCard({
   isActive?: boolean;
   onClick?: () => void;
 }) {
-  const { groups, teams, scores } = useApp();
+  const { groups, teams, scores, broadcast } = useApp();
   const group = groups.find((g) => g.id === groupId)!;
-  const groupTeams = teams.filter((t) => t.groupId === groupId);
+  const groupTeams = teams.filter((t) => (t.originalGroupId || t.groupId) === groupId);
   const ranked = [...groupTeams].sort(
     (a, b) => (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0)
   );
@@ -61,35 +63,41 @@ function GroupCard({
         )}
       </div>
       <div className="p-3 flex flex-col gap-1.5">
-        {ranked.map((team, idx) => (
-          <div key={team.id} className="flex items-center gap-2">
-            <span
-              className="w-4 text-right text-[10px] font-semibold"
-              style={{
-                color: idx === 0 ? "#FFCC00" : "#444",
-                fontFamily: "var(--font-mono)",
-              }}
-            >
-              {idx + 1}
-            </span>
-            <span
-              className="flex-1 truncate text-xs font-semibold"
-              style={{ color: idx === 0 ? "#fff" : "#666" }}
-            >
-              {team.name}
-            </span>
-            <span
-              className="text-xs font-black tabular-nums"
-              style={{
-                color: idx === 0 ? "#FFCC00" : "#555",
-                fontFamily: "var(--font-display)",
-                fontSize: "14px",
-              }}
-            >
-              {scores[team.id]?.total ?? 0}
-            </span>
+        {broadcast.drawPhase !== "done" ? (
+          <div className="flex items-center justify-center py-4">
+            <span className="text-xs font-semibold" style={{ color: "#444" }}>???</span>
           </div>
-        ))}
+        ) : (
+          ranked.map((team, idx) => (
+            <div key={team.id} className="flex items-center gap-2">
+              <span
+                className="w-4 text-right text-[10px] font-semibold"
+                style={{
+                  color: idx === 0 ? "#FFCC00" : "#444",
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
+                {idx + 1}
+              </span>
+              <span
+                className="flex-1 truncate text-xs font-semibold"
+                style={{ color: idx === 0 ? "#fff" : "#666" }}
+              >
+                {team.name}
+              </span>
+              <span
+                className="text-xs font-black tabular-nums"
+                style={{
+                  color: idx === 0 ? "#FFCC00" : "#555",
+                  fontFamily: "var(--font-display)",
+                  fontSize: "14px",
+                }}
+              >
+                {scores[team.id]?.total ?? 0}
+              </span>
+            </div>
+          ))
+        )}
       </div>
     </motion.div>
   );
@@ -109,41 +117,49 @@ function BracketConnector({ side }: { side: "left" | "right" }) {
   );
 }
 
-function GrandFinalBox() {
-  const { groups, teams, scores } = useApp();
-  const winners = groups.map((g) => {
-    const groupTeams = teams.filter((t) => t.groupId === g.id);
+function GrandFinalBox({ onStartFinals }: { onStartFinals: () => void }) {
+  const { groups, teams, scores, hostGroupId } = useApp();
+  const winners = groups.filter(g => g.id !== "finals").map((g) => {
+    const groupTeams = teams.filter((t) => (t.originalGroupId || t.groupId) === g.id);
+    if (groupTeams.length === 0) return null;
     return groupTeams.reduce(
       (top, t) => ((scores[t.id]?.total ?? 0) > (scores[top.id]?.total ?? 0) ? t : top),
       groupTeams[0]
     );
-  });
-  const allZero = winners.every((w) => (scores[w.id]?.total ?? 0) === 0);
+  }).filter(Boolean) as import("@/types").Team[];
+  const allZero = winners.length === 0 || winners.every((w) => (scores[w.id]?.total ?? 0) === 0);
+  const isFinalsActive = hostGroupId === "finals";
 
   return (
     <div
       className="glow-yellow flex flex-col rounded-sm border"
       style={{
-        borderColor: "#FFCC0060",
-        background: "#0f0e00",
+        borderColor: isFinalsActive ? "#22C55E60" : "#FFCC0060",
+        background: isFinalsActive ? "#0a1f0f" : "#0f0e00",
         minWidth: "160px",
       }}
     >
       <div
         className="flex items-center justify-center gap-2 border-b px-4 py-3"
-        style={{ borderColor: "#FFCC0030" }}
+        style={{ borderColor: isFinalsActive ? "#22C55E30" : "#FFCC0030" }}
       >
-        <Trophy size={14} style={{ color: "#FFCC00" }} />
+        <Trophy size={14} style={{ color: isFinalsActive ? "#22C55E" : "#FFCC00" }} />
         <span
           className="font-black uppercase tracking-widest"
           style={{
             fontFamily: "var(--font-display)",
             fontSize: "12px",
-            color: "#FFCC00",
+            color: isFinalsActive ? "#22C55E" : "#FFCC00",
           }}
         >
           Grand Final
         </span>
+        {isFinalsActive && (
+          <span className="flex items-center gap-1 rounded-sm px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest"
+            style={{ background: "#22C55E15", color: "#22C55E", border: "1px solid #22C55E30", fontFamily: "var(--font-mono)" }}>
+            <RadioTower size={8} /> Live
+          </span>
+        )}
       </div>
       <div className="flex flex-col gap-2 p-3">
         {winners.map((w, i) => (
@@ -158,20 +174,32 @@ function GrandFinalBox() {
           </div>
         ))}
       </div>
+      {!isFinalsActive && !allZero && (
+        <div className="border-t px-3 py-2" style={{ borderColor: "#FFCC0020" }}>
+          <button
+            onClick={onStartFinals}
+            className="flex w-full items-center justify-center gap-2 rounded-sm py-2 text-[11px] font-black uppercase tracking-widest transition-all hover:opacity-90"
+            style={{ background: "#FFCC00", color: "#000", fontFamily: "var(--font-display)" }}
+          >
+            <Zap size={12} />
+            Start Finals
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 function LiveLeaderboard() {
-  const { groups, teams, scores, userRole, hostGroupId, currentTeam } = useApp();
+  const { groups, teams, scores, userRole, hostGroupId, currentTeam, broadcast } = useApp();
   const activeGroupId = userRole === "host" ? hostGroupId : (currentTeam?.groupId ?? "g1");
   const group = groups.find((g) => g.id === activeGroupId)!;
-  const groupTeams = teams.filter((t) => t.groupId === activeGroupId);
+  const groupTeams = teams.filter((t) => (t.originalGroupId || t.groupId) === activeGroupId);
   const ranked = [...groupTeams].sort(
     (a, b) => (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0)
   );
 
-  const roundKeys = ["r1", "r2", "r3", "r4", "r5"] as const;
+  const roundKeys = ["r1", "r2", "r3", "r4"] as const;
 
   return (
     <div className="flex flex-col gap-3">
@@ -207,64 +235,70 @@ function LiveLeaderboard() {
         </div>
 
         {/* Rows */}
-        {ranked.map((team, idx) => {
-          const score = scores[team.id] ?? { total: 0, byRound: { r1: 0, r2: 0, r3: 0, r4: 0, r5: 0 } };
-          const isFirst = idx === 0 && score.total > 0;
-          return (
-            <motion.div
-              key={team.id}
-              layout
-              className="grid border-b px-4 py-3 transition-colors last:border-0"
-              style={{
-                borderColor: "#141414",
-                background: isFirst ? "#0f0e00" : idx % 2 === 0 ? "#0A0A0A" : "#080808",
-                gridTemplateColumns: "40px 1fr repeat(5, 52px) 72px",
-              }}
-            >
-              <span
-                className="font-black"
+        {broadcast.drawPhase !== "done" ? (
+          <div className="py-8 text-center text-sm font-semibold uppercase tracking-widest" style={{ color: "#444", fontFamily: "var(--font-mono)" }}>
+            Awaiting Draw...
+          </div>
+        ) : (
+          ranked.map((team, idx) => {
+            const score = scores[team.id] ?? { total: 0, byRound: { r1: 0, r2: 0, r3: 0, r4: 0, r5: 0 } };
+            const isFirst = idx === 0 && score.total > 0;
+            return (
+              <motion.div
+                key={team.id}
+                layout
+                className="grid border-b px-4 py-3 transition-colors last:border-0"
                 style={{
-                  fontFamily: "var(--font-display)",
-                  fontSize: "16px",
-                  color: isFirst ? "#FFCC00" : "#444",
+                  borderColor: "#141414",
+                  background: isFirst ? "#0f0e00" : idx % 2 === 0 ? "#0A0A0A" : "#080808",
+                  gridTemplateColumns: "40px 1fr repeat(5, 52px) 72px",
                 }}
               >
-                {idx + 1}
-              </span>
-              <span
-                className="flex items-center gap-2 font-semibold"
-                style={{ color: isFirst ? "#fff" : "#ccc" }}
-              >
-                {isFirst && <Trophy size={12} style={{ color: "#FFCC00", flexShrink: 0 }} />}
-                {team.name}
-              </span>
-              {roundKeys.map((rk) => (
-                <motion.span
-                  key={rk}
-                  layout
-                  className="text-center text-sm tabular-nums"
+                <span
+                  className="font-black"
                   style={{
-                    fontFamily: "var(--font-mono)",
-                    color: (score.byRound[rk] ?? 0) > 0 ? "#aaa" : "#333",
+                    fontFamily: "var(--font-display)",
+                    fontSize: "16px",
+                    color: isFirst ? "#FFCC00" : "#444",
                   }}
                 >
-                  {score.byRound[rk] ?? 0}
+                  {idx + 1}
+                </span>
+                <span
+                  className="flex items-center gap-2 font-semibold"
+                  style={{ color: isFirst ? "#fff" : "#ccc" }}
+                >
+                  {isFirst && <Trophy size={12} style={{ color: "#FFCC00", flexShrink: 0 }} />}
+                  {team.name}
+                </span>
+                {roundKeys.map((rk) => (
+                  <motion.span
+                    key={rk}
+                    layout
+                    className="text-center text-sm tabular-nums"
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      color: (score.byRound[rk] ?? 0) > 0 ? "#aaa" : "#333",
+                    }}
+                  >
+                    {score.byRound[rk] ?? 0}
+                  </motion.span>
+                ))}
+                <motion.span
+                  layout
+                  className="text-center font-black tabular-nums"
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontSize: "20px",
+                    color: isFirst ? "#FFCC00" : "#fff",
+                  }}
+                >
+                  {score.total}
                 </motion.span>
-              ))}
-              <motion.span
-                layout
-                className="text-center font-black tabular-nums"
-                style={{
-                  fontFamily: "var(--font-display)",
-                  fontSize: "20px",
-                  color: isFirst ? "#FFCC00" : "#fff",
-                }}
-              >
-                {score.total}
-              </motion.span>
-            </motion.div>
-          );
-        })}
+              </motion.div>
+            );
+          })
+        )}
       </div>
     </div>
   );
@@ -272,11 +306,21 @@ function LiveLeaderboard() {
 
 export default function BracketView() {
   const navigate = useNavigate();
-  const { userRole, currentTeam, logout, hostGroupId, setHostGroupId, groups, currentRound, resetQuizData } =
+  const { userRole, currentTeam, logout, hostGroupId, setHostGroupId, groups, currentRound, resetQuizData, setCurrentRound, updateBroadcast, broadcast } =
     useApp();
   const isHost = userRole === "host" || window.location.pathname.startsWith("/host");
   const displayName = isHost ? "Quiz Host" : currentTeam?.name ?? "";
   const currentRoundConfig = ROUND_CONFIG[currentRound];
+
+  const showDrawCeremony = ["idle", "awaiting", "shuffling", "revealing"].includes(broadcast.drawPhase);
+
+  const handleStartFinals = useCallback(() => {
+    if (!confirm("Start the Grand Final? This will switch to the finals question bank.")) return;
+    setHostGroupId("finals");
+    setCurrentRound(1);
+    updateBroadcast({ questionText: null, questionId: null, timerSecs: 0, timerTotal: 0, timerActive: false, timerLabel: "", buzzEnabled: false, buzzedTeamId: null, lockedOutTeamIds: [], isStealMode: false });
+    navigate("/host/quiz");
+  }, [setHostGroupId, setCurrentRound, updateBroadcast, navigate]);
 
   return (
     <div
@@ -359,6 +403,17 @@ export default function BracketView() {
             </button>
           )}
 
+          {isHost && !showDrawCeremony && (
+            <button
+              onClick={() => updateBroadcast({ drawPhase: "idle", drawRevealedGroups: 0 })}
+              className="hidden sm:flex items-center gap-1.5 rounded-sm border px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors hover:border-yellow-400/40"
+              style={{ borderColor: "#333", color: "#888", fontFamily: "var(--font-mono)" }}
+            >
+              <Shuffle size={11} />
+              Redraw Groups
+            </button>
+          )}
+
           {isHost && (
             <motion.button
               whileTap={{ scale: 0.97 }}
@@ -391,10 +446,23 @@ export default function BracketView() {
 
       {/* ── Body ── */}
       <div className="relative z-10 flex flex-1 flex-col gap-5 overflow-y-auto p-5">
+        {/* Draw Ceremony Overlay */}
+        <AnimatePresence>
+          {showDrawCeremony && (
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 z-50 flex items-center justify-center p-8"
+              style={{ background: "rgba(0,0,0,0.9)" }}
+            >
+              <GroupDrawCeremony />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Group tabs (host only) */}
         {isHost && (
           <div className="flex gap-2">
-            {groups.map((g) => (
+            {groups.filter(g => g.id !== "finals").map((g) => (
               <button
                 key={g.id}
                 onClick={() => setHostGroupId(g.id)}
@@ -409,6 +477,14 @@ export default function BracketView() {
                 {g.name}
               </button>
             ))}
+            {hostGroupId === "finals" && (
+              <span
+                className="flex items-center gap-1 rounded-sm border px-3 py-1.5 text-xs font-bold uppercase tracking-widest"
+                style={{ borderColor: "#22C55E60", background: "#0a1f0f", color: "#22C55E", fontFamily: "var(--font-mono)" }}
+              >
+                <Trophy size={10} /> Finals
+              </span>
+            )}
           </div>
         )}
 
@@ -425,7 +501,7 @@ export default function BracketView() {
           <div className="flex items-center justify-center gap-8 max-w-4xl mx-auto">
             {/* Left groups */}
             <div className="flex flex-col gap-3 w-72">
-              {groups.map((g) => (
+              {groups.filter(g => g.id !== "finals").map((g) => (
                 <GroupCard 
                   key={g.id} 
                   groupId={g.id} 
@@ -438,7 +514,7 @@ export default function BracketView() {
             <BracketConnector side="left" />
 
             <div className="w-56">
-              <GrandFinalBox />
+              <GrandFinalBox onStartFinals={handleStartFinals} />
             </div>
           </div>
         </div>

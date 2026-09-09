@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Lock, LogIn, ShieldCheck, Users, Monitor } from "lucide-react";
@@ -7,7 +7,7 @@ import { useApp } from "@/context/AppContext";
 type Tab = "team" | "host" | "audience";
 
 export default function LoginView() {
-  const { login, loginAudience, teams } = useApp();
+  const { login, loginAudience, teams, userRole, currentTeam } = useApp();
   const [tab, setTab] = useState<Tab>("team");
   const [teamId, setTeamId] = useState("");
   const [password, setPassword] = useState("");
@@ -15,6 +15,12 @@ export default function LoginView() {
   const [loading, setLoading] = useState(false);
 
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (userRole === "host") navigate("/host/bracket");
+    else if (userRole === "team" && currentTeam) navigate(`/contestant/${currentTeam.id}`);
+    else if (userRole === "audience") navigate("/audience");
+  }, [userRole, currentTeam, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,12 +34,12 @@ export default function LoginView() {
     await new Promise((r) => setTimeout(r, 600));
     const id = tab === "host" ? "host" : teamId;
     if (!id) { setError("Please select a team."); setLoading(false); return; }
-    const ok = login(id, password);
+    const ok = await login(id, password);
     if (ok) {
       if (tab === "host") navigate("/host/bracket");
       else {
         const team = teams.find((t) => t.id === id);
-        if (team) navigate(`/contestant/${team.groupId}/${team.id}`);
+        if (team) navigate(`/contestant/${team.id}`);
       }
     } else {
       setError("Invalid credentials. Please try again.");
@@ -42,8 +48,8 @@ export default function LoginView() {
   };
 
   const tabs = [
-    { id: "team" as Tab,     label: "Team Login",   icon: <Users size={13} />,       hint: "mtn2025" },
-    { id: "host" as Tab,     label: "Host",          icon: <ShieldCheck size={13} />, hint: "host@mtn2025" },
+    { id: "team" as Tab,     label: "Team Login",   icon: <Users size={13} />,       hint: "contestant" },
+    { id: "host" as Tab,     label: "Host",          icon: <ShieldCheck size={13} />, hint: "moderator" },
     { id: "audience" as Tab, label: "Projector",     icon: <Monitor size={13} />,     hint: "No login required" },
   ];
 
@@ -182,7 +188,7 @@ export default function LoginView() {
                   />
                 </div>
                 <p className="text-[10px]" style={{ color: "#333", fontFamily: "var(--font-mono)" }}>
-                  {tab === "host" ? "Host: host@mtn2025" : "Teams: mtn2025"}
+                  {tab === "host" ? "Please enter your host password" : "Ask your host for the team password"}
                 </p>
               </div>
             )}
@@ -223,7 +229,7 @@ export default function LoginView() {
         </div>
 
         <p className="mt-5 text-center text-[10px] tracking-wider" style={{ color: "#333", fontFamily: "var(--font-mono)" }}>
-          MTN GHANA AI QUIZ CHAMPIONSHIP · 2025
+          MTN GHANA AI QUIZ CHAMPIONSHIP · 2026
         </p>
       </motion.div>
     </div>

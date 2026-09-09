@@ -5,7 +5,7 @@ import { useApp } from "@/context/AppContext";
 import { useHostShortcuts, HostDrawButton, HostAnswerControls } from "@/components/shared/HostControls";
 import { playSound } from "@/data/seed";
 
-const SHUFFLE_MS = 3500;
+const SHUFFLE_MS = parseInt(import.meta.env.VITE_SHUFFLE_MS || "1500", 10);
 const SHUFFLE_INTERVAL = 120;
 const SHUFFLE_PHRASES = [
   "Scanning question bank...", "Randomizing selection...", "Calculating probability...",
@@ -13,7 +13,7 @@ const SHUFFLE_PHRASES = [
 ];
 
 export default function RoundOne() {
-  const { questions, markR1Used, resetQuestions, activeTeamId, teams, addPoints, updateBroadcast, clearBuzzState, advanceToNextTeam } = useApp();
+  const { questions, markR1Used, resetQuestions, activeTeamId, teams, addPoints, updateBroadcast, clearBuzzState, advanceToNextTeam, flashTeam } = useApp();
   const [currentQ, setCurrentQ] = useState<typeof questions.round1[0] | null>(null);
   const [isShuffling, setIsShuffling] = useState(false);
   const [shuffleText, setShuffleText] = useState("");
@@ -28,6 +28,23 @@ export default function RoundOne() {
   const total = questions.round1.filter((q) => q.difficulty === difficulty).length;
   const remaining = available.length;
   const activeTeam = teams.find((t) => t.id === activeTeamId);
+
+  // Auto-switch to next difficulty when current bank is exhausted
+  useEffect(() => {
+    if (remaining === 0 && !isShuffling && !currentQ) {
+      if (difficulty === "easy") {
+        const medAvail = questions.round1.filter((q) => !q.isUsed && q.difficulty === "medium");
+        if (medAvail.length > 0) setDifficulty("medium");
+        else {
+          const hardAvail = questions.round1.filter((q) => !q.isUsed && q.difficulty === "hard");
+          if (hardAvail.length > 0) setDifficulty("hard");
+        }
+      } else if (difficulty === "medium") {
+        const hardAvail = questions.round1.filter((q) => !q.isUsed && q.difficulty === "hard");
+        if (hardAvail.length > 0) setDifficulty("hard");
+      }
+    }
+  }, [remaining, difficulty, isShuffling, currentQ, questions.round1]);
 
   const draw = useCallback(() => {
     if (!available.length || isShuffling) return;
@@ -72,11 +89,12 @@ export default function RoundOne() {
 
   const handleIncorrect = useCallback(() => {
     if (!currentQ || !showAnswer || !activeTeamId) return;
+    flashTeam(activeTeamId, "wrong");
     advanceToNextTeam();
     setCurrentQ(null);
     setShowAnswer(false);
     updateBroadcast({ questionText: null, questionId: null });
-  }, [currentQ, showAnswer, activeTeamId, advanceToNextTeam, updateBroadcast]);
+  }, [currentQ, showAnswer, activeTeamId, advanceToNextTeam, updateBroadcast, flashTeam]);
 
   useHostShortcuts({
     onDraw: draw,

@@ -3,7 +3,10 @@ import { useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { LogOut, RadioTower, Trophy, Zap, AlertTriangle, Lock } from "lucide-react";
 import { useApp } from "@/context/AppContext";
-import { ROUND_CONFIG } from "@/data/seed";
+import { ROUND_CONFIG, playSound } from "@/data/seed";
+import { GroupDrawCeremony } from "@/components/shared/GroupDrawCeremony";
+import { FinalsRevealCeremony } from "@/components/shared/FinalsRevealCeremony";
+import PodiumCeremony from "@/components/shared/PodiumCeremony";
 
 // ── Shared mini-leaderboard ──────────────────────────────────────────────────
 function GroupLeaderboard({ groupId, teamId }: { groupId: string; teamId: string }) {
@@ -26,16 +29,23 @@ function GroupLeaderboard({ groupId, teamId }: { groupId: string; teamId: string
         const isMe = team.id === teamId;
         const isFirst = i === 0 && pts > 0;
         const isFloorTeam = team.id === activeFloorTeamId;
+        const isFlashTarget = broadcast.flashFeedback?.teamId === team.id;
+        const flashType = broadcast.flashFeedback?.type;
+        const isCorrect = isFlashTarget && flashType === "correct";
+        const isWrong = isFlashTarget && flashType === "wrong";
+        
         return (
           <motion.div
             key={team.id}
             layout
             className="flex items-center gap-3 rounded-sm border px-4 py-2.5"
             style={{
-              borderColor: isFloorTeam ? "#FFCC00" : isMe ? "#FFCC0060" : isFirst ? "#FFCC0025" : "#1e1e1e",
-              background: isFloorTeam ? "#FFCC0020" : isMe ? "#0f0e00" : isFirst ? "#0c0b00" : "#0A0A0A",
-              boxShadow: isFloorTeam ? "0 0 20px 2px #FFCC0040" : "none",
+              borderColor: isCorrect ? "#22c55e" : isWrong ? "#ef4444" : isFloorTeam ? "#FFCC00" : isMe ? "#FFCC0060" : isFirst ? "#FFCC0025" : "#1e1e1e",
+              background: isCorrect ? "#22c55e20" : isWrong ? "#ef444420" : isFloorTeam ? "#FFCC0020" : isMe ? "#0f0e00" : isFirst ? "#0c0b00" : "#0A0A0A",
+              boxShadow: isCorrect ? "0 0 30px 4px #22c55e40" : isWrong ? "0 0 30px 4px #ef444440" : isFloorTeam ? "0 0 20px 2px #FFCC0040" : "none",
             }}
+            animate={isFlashTarget ? { scale: [1, 1.05, 1, 1.05, 1] } : { scale: 1 }}
+            transition={{ duration: 0.4 }}
           >
             <span
               className="w-5 text-right font-black"
@@ -115,18 +125,18 @@ type BuzzState = "idle" | "active" | "mybuzz" | "taken" | "locked" | "spectating
 
 export default function ContestantView() {
   const navigate = useNavigate();
-  const { groupId: urlGroupId, teamId: urlTeamId } = useParams();
+  const { teamId: urlTeamId } = useParams();
   const { currentTeam, logout, broadcast, teamBuzz, currentRound, groups, teams, hostGroupId } = useApp();
   const [buzzFlash, setBuzzFlash] = useState(false);
 
   const myId = urlTeamId || currentTeam?.id || "";
-  const myGroupId = urlGroupId || currentTeam?.groupId || "";
-  const group = groups.find((g) => g.id === myGroupId);
   const activeTeam = teams.find(t => t.id === myId);
+  const myGroupId = activeTeam?.groupId || "";
   const roundConfig = ROUND_CONFIG[currentRound];
 
   // Check if this team's group is the active group on the pedestal
   const isMyGroupActive = myGroupId === hostGroupId;
+  const group = groups.find((g) => g.id === myGroupId);
 
   const buzzState: BuzzState = !broadcast.buzzEnabled
     ? "idle"
@@ -157,16 +167,42 @@ export default function ContestantView() {
     return () => window.removeEventListener("keydown", handler);
   }, [handleBuzz]);
 
+  const activeGroup = groups.find((g) => g.id === hostGroupId);
+
   const buzzConfig = {
     idle:       { bg: "#1a1a1a", color: "#444",    text: "STANDBY",    sub: "Buzzer not active yet",       glow: "none" },
-    spectating: { bg: "#111827", color: "#6366F1", text: "SPECTATING", sub: "Another group is playing",     glow: "0 0 40px 8px #6366F120" },
+    spectating: { bg: "#111827", color: "#6366F1", text: "SPECTATING", sub: `${activeGroup?.name ?? "Another group"} is playing`, glow: "0 0 40px 8px #6366F120" },
     active:     { bg: "#FFCC00", color: "#000",    text: "BUZZ!",      sub: "Press to buzz in",             glow: "0 0 80px 20px #FFCC0050" },
     mybuzz:     { bg: "#22C55E", color: "#000",    text: "BUZZED IN!", sub: "Await host decision",          glow: "0 0 80px 20px #22C55E60" },
     taken:      { bg: "#1a1a1a", color: "#555",    text: "BUZZED",     sub: "Another team buzzed in",       glow: "none" },
     locked:     { bg: "#1f0a0a", color: "#EF4444", text: "LOCKED OUT", sub: "Cannot buzz this question",    glow: "0 0 40px 8px #EF444420" },
   }[buzzState];
 
-  const isBuzzerRound = currentRound === 2 || currentRound === 5;
+  const isBuzzerRound = currentRound === 4 || currentRound === 5;
+
+  if (broadcast.drawPhase === "revealing_finals") {
+    return (
+      <div className="flex h-screen w-full bg-black">
+        <FinalsRevealCeremony />
+      </div>
+    );
+  }
+
+  if (broadcast.drawPhase === "podium_reveal") {
+    return (
+      <div className="flex h-screen w-full bg-black">
+        <PodiumCeremony />
+      </div>
+    );
+  }
+
+  if (broadcast.drawPhase !== "done") {
+    return (
+      <div className="flex h-screen w-full items-center justify-center p-8 bg-black">
+        <GroupDrawCeremony />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -230,13 +266,25 @@ export default function ContestantView() {
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   className="flex h-full items-center justify-center rounded-sm border"
-                  style={{ borderColor: "#1a1a1a", background: "#0A0A0A" }}
+                  style={{ borderColor: !isMyGroupActive ? "#6366F130" : "#1a1a1a", background: !isMyGroupActive ? "#0c0d1a" : "#0A0A0A" }}
                 >
                   <div className="text-center px-8">
                     {broadcast.isShuffling ? (
                       <p className="slot-flicker font-black uppercase" style={{ fontFamily: "var(--font-display)", fontSize: "clamp(24px,4vw,48px)", color: "#FFCC00" }}>
                         Question incoming...
                       </p>
+                    ) : !isMyGroupActive ? (
+                      <>
+                        <p className="mb-3 text-[10px] uppercase tracking-widest" style={{ color: "#6366F180", fontFamily: "var(--font-mono)" }}>
+                          Currently on the podium
+                        </p>
+                        <h2 className="font-black uppercase" style={{ fontFamily: "var(--font-display)", fontSize: "clamp(28px, 5vw, 52px)", lineHeight: 1.1, color: "#6366F1" }}>
+                          {activeGroup?.name ?? "Another Group"}
+                        </h2>
+                        <p className="mt-3 text-sm" style={{ color: "#6366F160", fontFamily: "var(--font-mono)" }}>
+                          Sit tight — your group will be called soon
+                        </p>
+                      </>
                     ) : (
                       <>
                         <p className="mb-2 text-[10px] uppercase tracking-widest text-white/50" style={{ fontFamily: "var(--font-mono)" }}>
@@ -259,11 +307,15 @@ export default function ContestantView() {
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                  className="flex h-full flex-col overflow-hidden rounded-sm border glow-yellow"
-                  style={{ borderColor: "#FFCC0040", background: "#0A0A0A" }}
+                  className={`flex h-full flex-col overflow-hidden rounded-sm border ${!broadcast.flashFeedback ? "glow-yellow" : ""}`}
+                  style={{ 
+                    borderColor: broadcast.flashFeedback?.type === "correct" ? "#22c55e" : broadcast.flashFeedback?.type === "wrong" ? "#ef4444" : "#FFCC0040", 
+                    background: broadcast.flashFeedback?.type === "correct" ? "#22c55e15" : broadcast.flashFeedback?.type === "wrong" ? "#ef444415" : "#0A0A0A",
+                    boxShadow: broadcast.flashFeedback?.type === "correct" ? "0 0 80px 16px #22c55e30" : broadcast.flashFeedback?.type === "wrong" ? "0 0 80px 16px #ef444430" : undefined
+                  }}
                 >
                   <motion.div className="h-1 shrink-0" initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: 0.6 }}
-                    style={{ background: "#FFCC00", transformOrigin: "left" }}
+                    style={{ background: broadcast.flashFeedback?.type === "correct" ? "#22c55e" : broadcast.flashFeedback?.type === "wrong" ? "#ef4444" : "#FFCC00", transformOrigin: "left" }}
                   />
                   <div className="flex items-center gap-3 border-b px-6 py-3" style={{ borderColor: "#1a1a1a" }}>
                     <span className="text-[10px] uppercase tracking-widest" style={{ color: "#FFCC00", fontFamily: "var(--font-mono)" }}>

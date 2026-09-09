@@ -8,15 +8,13 @@ import { useHostShortcuts, HostDrawButton, HostAnswerControls } from "@/componen
 export default function RoundThree() {
   const {
     questions, markR3Used, activeTeamId, teams, addPoints,
-    updateBroadcast, clearBuzzState, advanceToNextTeam,
+    updateBroadcast, clearBuzzState, advanceToNextTeam, flashTeam
   } = useApp();
   const [currentQ, setCurrentQ] = useState<typeof questions.round3[0] | null>(null);
   const [showAnswer, setShowAnswer] = useState(false);
-  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("easy");
 
-  const availableTotal = questions.round3.filter((q) => !q.isUsed);
-  const available = availableTotal.filter((q) => q.difficulty === difficulty);
-  const total = questions.round3.filter((q) => q.difficulty === difficulty).length;
+  const available = questions.round3.filter((q) => !q.isUsed);
+  const total = questions.round3.length;
   const remaining = available.length;
   const activeTeam = teams.find((t) => t.id === activeTeamId);
 
@@ -32,7 +30,7 @@ export default function RoundThree() {
     markR3Used(q.id);
     clearBuzzState();
     playSound("draw");
-    updateBroadcast({ questionText: q.text, questionId: q.id, round: 4, isShuffling: false });
+    updateBroadcast({ questionText: q.text, questionId: q.id, round: 3, isShuffling: false });
   }, [available, markR3Used, updateBroadcast, clearBuzzState]);
 
   const toggleAnswer = useCallback(() => {
@@ -43,7 +41,7 @@ export default function RoundThree() {
 
   const handleCorrect = useCallback(() => {
     if (!currentQ || !showAnswer || !activeTeamId) return;
-    addPoints(activeTeamId, 1, "r4");
+    addPoints(activeTeamId, 1, "r3");
     advanceToNextTeam();
     setCurrentQ(null);
     setShowAnswer(false);
@@ -52,11 +50,12 @@ export default function RoundThree() {
 
   const handleIncorrect = useCallback(() => {
     if (!currentQ || !showAnswer || !activeTeamId) return;
+    flashTeam(activeTeamId, "wrong");
     advanceToNextTeam();
     setCurrentQ(null);
     setShowAnswer(false);
     updateBroadcast({ questionText: null, questionId: null });
-  }, [currentQ, showAnswer, activeTeamId, advanceToNextTeam, updateBroadcast]);
+  }, [currentQ, showAnswer, activeTeamId, advanceToNextTeam, updateBroadcast, flashTeam]);
 
   useHostShortcuts({
     onDraw: draw,
@@ -69,7 +68,7 @@ export default function RoundThree() {
     isWrongDisabled: !showAnswer,
   });
 
-  const roundLabel = "Round 4 — True / False (Directed)";
+  const roundLabel = "Round 3 — True / False (Directed)";
 
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-hidden p-5">
@@ -185,24 +184,6 @@ export default function RoundThree() {
           </AnimatePresence>
 
           <div className="shrink-0 flex flex-col items-center gap-2">
-            {!currentQ && (
-              <div className="flex gap-1 p-1 mb-2 rounded-sm border" style={{ background: "#0A0A0A", borderColor: "#222" }}>
-                {(["easy", "medium", "hard"] as const).map((d) => (
-                  <button
-                    key={d}
-                    onClick={() => setDifficulty(d)}
-                    className="px-5 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-sm transition-colors"
-                    style={{
-                      background: difficulty === d ? accentColor : "transparent",
-                      color: difficulty === d ? "#fff" : "#666",
-                      fontFamily: "var(--font-mono)",
-                    }}
-                  >
-                    {d}
-                  </button>
-                ))}
-              </div>
-            )}
             <HostDrawButton
               onDraw={draw}
               isShuffling={false}

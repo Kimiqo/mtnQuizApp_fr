@@ -37,7 +37,7 @@ export default function RoundTwo() {
     updateBroadcast({
       questionText: `${problem.scenario}\n\nQuestion: ${problem.question}`,
       questionId: problem.id,
-      round: 3,
+      round: 2,
       isShuffling: false
     });
   }, [problem, updateBroadcast]);
@@ -85,7 +85,7 @@ export default function RoundTwo() {
     <div className="flex flex-1 flex-col gap-4 overflow-hidden p-5">
       <div className="shrink-0">
         <h2 className="font-black uppercase tracking-widest" style={{ fontFamily: "var(--font-display)", fontSize: "22px", color: "#FFCC00" }}>
-          Round 3 — Problem of the Day
+          Round 2 — Problem of the Day
         </h2>
         <p className="text-xs" style={{ color: "#666", fontFamily: "var(--font-mono)" }}>
           All teams simultaneously · group discussion · HOST VIEW — answer visible
@@ -171,7 +171,7 @@ export default function RoundTwo() {
               <div key={team.id} className="flex items-center gap-1">
                 <span className="flex-1 truncate text-[10px]" style={{ color: "#888" }}>{team.name.split(" ")[0]}</span>
                 {[1, 2, 3].map((pts) => (
-                  <button key={pts} onClick={() => addPoints(team.id, pts, "r3")}
+                  <button key={pts} onClick={() => addPoints(team.id, pts, "r2")}
                     className="rounded px-1.5 py-0.5 text-[10px] font-bold"
                     style={{ background: "#FFCC0020", color: "#FFCC00" }}
                   >+{pts}</button>

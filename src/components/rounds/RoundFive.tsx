@@ -76,15 +76,14 @@ export default function RoundFive() {
     clearBuzzState();
     markR5Used(r.id);
     playSound("draw");
-    updateBroadcast({ questionText: null, questionId: r.id, round: 5, isShuffling: false });
+    updateBroadcast({ questionText: null, questionId: r.id, round: 4, isShuffling: false });
   }, [available, markR5Used, updateBroadcast, clearBuzzState]);
 
   const toggleAnswer = useCallback(() => {
     if (!currentRiddle || clueLevel === 0) return;
     setShowAnswer((p) => !p);
-    disableBuzz();
     playSound("answer");
-  }, [currentRiddle, clueLevel, disableBuzz]);
+  }, [currentRiddle, clueLevel]);
 
   // End the current riddle early (e.g. team answered without needing all 3 clues)
   const endRiddle = useCallback(() => {
