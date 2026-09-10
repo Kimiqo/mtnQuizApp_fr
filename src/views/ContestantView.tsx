@@ -10,11 +10,12 @@ import PodiumCeremony from "@/components/shared/PodiumCeremony";
 
 // ── Shared mini-leaderboard ──────────────────────────────────────────────────
 function GroupLeaderboard({ groupId, teamId }: { groupId: string; teamId: string }) {
-  const { groups, teams, scores, hostGroupId, broadcast, activeTeamId } = useApp();
+  const { groups, teams, scores, finalsScores, hostGroupId, broadcast, activeTeamId } = useApp();
   const gid = groupId || hostGroupId;
   const group = groups.find((g) => g.id === gid)!;
+  const targetScores = gid === "finals" ? finalsScores : scores;
   const ranked = [...teams.filter((t) => t.groupId === gid)].sort(
-    (a, b) => (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0)
+    (a, b) => (targetScores[b.id]?.total ?? 0) - (targetScores[a.id]?.total ?? 0)
   );
   
   const activeFloorTeamId = broadcast.buzzedTeamId || activeTeamId;
@@ -25,7 +26,7 @@ function GroupLeaderboard({ groupId, teamId }: { groupId: string; teamId: string
         {group.name} — Live Standings
       </p>
       {ranked.map((team, i) => {
-        const pts = scores[team.id]?.total ?? 0;
+        const pts = targetScores[team.id]?.total ?? 0;
         const isMe = team.id === teamId;
         const isFirst = i === 0 && pts > 0;
         const isFloorTeam = team.id === activeFloorTeamId;
@@ -62,11 +63,10 @@ function GroupLeaderboard({ groupId, teamId }: { groupId: string; teamId: string
               {isMe && <span className="ml-2 text-[10px] opacity-60" style={{ fontFamily: "var(--font-mono)" }}>(you)</span>}
             </span>
             <motion.span
-              layout
               className="font-black tabular-nums"
-              style={{ fontFamily: "var(--font-display)", fontSize: "22px", color: isFirst ? "#FFCC00" : "#fff" }}
+              style={{ fontFamily: "var(--font-display)", fontSize: "20px", color: isMe ? "#FFCC00" : isFirst ? "#fff" : "#666" }}
             >
-              {pts}
+              {targetScores[team.id]?.total ?? 0}
             </motion.span>
           </motion.div>
         );

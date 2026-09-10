@@ -56,21 +56,23 @@ function AudienceTimer() {
 }
 
 function AnimatedLeaderboard({ groupId }: { groupId: string }) {
-  const { teams, scores, broadcast, activeTeamId } = useApp();
+  const { teams, scores, finalsScores, broadcast, activeTeamId } = useApp();
   const groupTeams = teams.filter((t) => t.groupId === groupId);
+  const targetScores = groupId === "finals" ? finalsScores : scores;
   const ranked = [...groupTeams].sort(
-    (a, b) => (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0)
+    (a, b) => (targetScores[b.id]?.total ?? 0) - (targetScores[a.id]?.total ?? 0)
   );
 
   const activeFloorTeamId = broadcast.buzzedTeamId || activeTeamId;
 
   return (
     <div className="flex flex-col gap-2">
-      {ranked.map((team, i) => {
-        const pts = scores[team.id]?.total ?? 0;
-        const isFirst = i === 0 && pts > 0;
-        const barWidth = ranked[0] && (scores[ranked[0].id]?.total ?? 0) > 0
-          ? `${Math.round((pts / (scores[ranked[0].id]?.total ?? 1)) * 100)}%`
+      {ranked.map((team, idx) => {
+        const isFirst = idx === 0;
+        const pts = targetScores[team.id]?.total ?? 0;
+        // relative width compared to the leader (or 1 if leader has 0)
+        const barWidth = ranked[0] && (targetScores[ranked[0].id]?.total ?? 0) > 0
+          ? `${Math.round((pts / (targetScores[ranked[0].id]?.total ?? 1)) * 100)}%`
           : "0%";
 
         const isFloorTeam = team.id === activeFloorTeamId;
@@ -85,7 +87,7 @@ function AnimatedLeaderboard({ groupId }: { groupId: string }) {
             layout
             initial={{ opacity: 0, x: 20 }}
             animate={isFlashTarget ? { opacity: 1, x: 0, scale: [1, 1.05, 1, 1.05, 1] } : { opacity: 1, x: 0, scale: 1 }}
-            transition={{ delay: isFlashTarget ? 0 : i * 0.05, duration: 0.4 }}
+            transition={{ delay: isFlashTarget ? 0 : idx * 0.05, duration: 0.4 }}
             className="relative overflow-hidden rounded-sm border"
             style={{
               borderColor: isCorrect ? "#22c55e" : isWrong ? "#ef4444" : isFloorTeam ? "#FFCC00" : isFirst ? "#FFCC0060" : "#1e1e1e",
@@ -106,7 +108,7 @@ function AnimatedLeaderboard({ groupId }: { groupId: string }) {
                 className="w-7 text-right font-black"
                 style={{ fontFamily: "var(--font-display)", fontSize: "22px", color: isFirst ? "#FFCC00" : "#555" }}
               >
-                {i + 1}
+                {idx + 1}
               </span>
               {isFirst && <Trophy size={14} style={{ color: "#FFCC00", flexShrink: 0 }} />}
               <span
@@ -133,10 +135,11 @@ function AnimatedLeaderboard({ groupId }: { groupId: string }) {
 // ── Bracket Components ──
 
 function GroupCard({ groupId, isActive, onClick }: { groupId: string; isActive?: boolean; onClick?: () => void; }) {
-  const { groups, teams, scores } = useApp();
+  const { groups, teams, scores, finalsScores } = useApp();
   const group = groups.find((g) => g.id === groupId)!;
   const groupTeams = teams.filter((t) => (t.originalGroupId || t.groupId) === groupId);
-  const ranked = [...groupTeams].sort((a, b) => (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0));
+  const targetScores = groupId === "finals" ? finalsScores : scores;
+  const ranked = [...groupTeams].sort((a, b) => (targetScores[b.id]?.total ?? 0) - (targetScores[a.id]?.total ?? 0));
 
   return (
     <motion.div
@@ -166,7 +169,7 @@ function GroupCard({ groupId, isActive, onClick }: { groupId: string; isActive?:
             <span className="w-4 text-right text-[10px] font-semibold" style={{ color: idx === 0 ? "#FFCC00" : "#444", fontFamily: "var(--font-mono)" }}>{idx + 1}</span>
             <span className="flex-1 truncate text-xs font-semibold" style={{ color: idx === 0 ? "#fff" : "#666" }}>{team.name}</span>
             <span className="text-xs font-black tabular-nums" style={{ color: idx === 0 ? "#FFCC00" : "#555", fontFamily: "var(--font-display)", fontSize: "14px" }}>
-              {scores[team.id]?.total ?? 0}
+              {targetScores[team.id]?.total ?? 0}
             </span>
           </div>
         ))}
@@ -333,9 +336,9 @@ export default function AudienceView() {
 
       {/* ── Main body ── */}
       {tab === "quiz" ? (
-        <div className="relative z-10 flex flex-1 gap-6 overflow-hidden p-6">
+        <div className="relative z-10 flex flex-col md:flex-row flex-1 overflow-y-auto md:overflow-hidden gap-6 p-6">
           {/* Left: Question area */}
-          <div className="flex flex-[3] flex-col gap-4">
+          <div className="flex flex-[3] flex-col gap-4 min-h-0">
             {/* Round badge */}
             <div className="flex items-center gap-3">
               <div
@@ -352,7 +355,7 @@ export default function AudienceView() {
             </div>
 
             {/* Question card */}
-            <div className="flex flex-1 flex-col">
+            <div className="flex flex-1 flex-col min-h-0">
               <AnimatePresence mode="wait">
                 {!broadcast.questionText || broadcast.isShuffling ? (
                   <motion.div
@@ -382,7 +385,7 @@ export default function AudienceView() {
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-                    className={`scanline relative flex flex-1 flex-col overflow-hidden rounded-sm border ${!broadcast.flashFeedback ? "glow-yellow" : ""}`}
+                    className={`scanline relative flex flex-1 flex-col overflow-hidden rounded-sm border min-h-0 ${!broadcast.flashFeedback ? "glow-yellow" : ""}`}
                     style={{ 
                       borderColor: broadcast.flashFeedback?.type === "correct" ? "#22c55e" : broadcast.flashFeedback?.type === "wrong" ? "#ef4444" : "#FFCC0050", 
                       background: broadcast.flashFeedback?.type === "correct" ? "#22c55e15" : broadcast.flashFeedback?.type === "wrong" ? "#ef444415" : "#0A0A0A",
@@ -392,16 +395,18 @@ export default function AudienceView() {
                     <motion.div className="h-1.5 shrink-0" initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: 0.7 }}
                       style={{ background: broadcast.flashFeedback?.type === "correct" ? "#22c55e" : broadcast.flashFeedback?.type === "wrong" ? "#ef4444" : "#FFCC00", transformOrigin: "left" }}
                     />
-                    <div className="flex flex-1 items-center px-10 py-8">
-                      <motion.p
-                        initial={{ opacity: 0, y: 12 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.2 }}
-                        className="font-bold leading-snug"
-                        style={{ fontFamily: "var(--font-display)", fontSize: currentRound === 3 ? "clamp(22px,3vw,40px)" : "clamp(28px,4.5vw,58px)", color: "#fff", whiteSpace: "pre-wrap" }}
-                      >
-                        {broadcast.questionText}
-                      </motion.p>
+                    <div className="flex flex-1 flex-col px-6 md:px-10 py-6 md:py-8 overflow-y-auto min-h-0">
+                      <div className="my-auto w-full shrink-0">
+                        <motion.p
+                          initial={{ opacity: 0, y: 12 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.2 }}
+                          className="font-bold leading-snug"
+                          style={{ fontFamily: "var(--font-display)", fontSize: currentRound === 3 ? "clamp(22px,3vw,40px)" : "clamp(28px,4.5vw,58px)", color: "#fff", whiteSpace: "pre-wrap" }}
+                        >
+                          {broadcast.questionText}
+                        </motion.p>
+                      </div>
                     </div>
                     {/* NEVER show answer/explanation on audience view */}
                   </motion.div>
@@ -450,7 +455,7 @@ export default function AudienceView() {
           </div>
 
           {/* Right: Timer + Leaderboard */}
-          <div className="flex w-80 shrink-0 flex-col gap-4 overflow-y-auto">
+          <div className="flex w-full md:w-80 shrink-0 flex-col gap-4 overflow-y-visible md:overflow-y-auto border-t md:border-t-0 md:border-l p-4" style={{ borderColor: "#222" }}>
             {/* Timer */}
             {(broadcast.timerActive || broadcast.timerSecs > 0) && (
               <div
@@ -500,15 +505,17 @@ export default function AudienceView() {
             <p className="mb-4 flex items-center justify-center gap-2 text-sm uppercase tracking-widest" style={{ color: "#FFCC00", fontFamily: "var(--font-mono)" }}>
               <Trophy size={14} /> Tournament Bracket
             </p>
-            <div className="flex items-center justify-center gap-8 max-w-4xl mx-auto">
+            <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 max-w-4xl mx-auto w-full">
               {/* Left groups */}
-              <div className="flex flex-col gap-3 w-72">
+              <div className="flex flex-col gap-3 w-full max-w-[280px] md:w-72">
                 {groups.filter(g => g.id !== "finals").map((g) => (
                   <GroupCard key={g.id} groupId={g.id} isActive={activeGroup.id === g.id} />
                 ))}
               </div>
-              <BracketConnector side="left" />
-              <div className="w-56">
+              <div className="rotate-90 md:rotate-0 my-2 md:my-0">
+                <BracketConnector side="left" />
+              </div>
+              <div className="w-full max-w-[280px] md:w-56">
                 <GrandFinalBox />
               </div>
             </div>

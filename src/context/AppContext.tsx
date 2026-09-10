@@ -59,6 +59,7 @@ interface AppContextType {
 
   // ── Scores ────────────────────────────────────────────────────────────────
   scores: Record<string, TeamScore>;
+  finalsScores: Record<string, TeamScore>;
   addPoints: (teamId: string, points: number, round: RoundKey) => void;
   deductPoints: (teamId: string, points: number, round: RoundKey) => void;
   toggleDataset: () => void;
@@ -96,6 +97,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [activeTeamId, setActiveTeamIdState] = useState<string | null>(null);
   const [questions, setQuestions] = useState<QuestionBank>(INITIAL_QUESTIONS);
   const [scores, setScores] = useState<Record<string, TeamScore>>(buildInitialScores());
+  const [finalsScores, setFinalsScores] = useState<Record<string, TeamScore>>({});
   const [teams, setTeams] = useState<Team[]>(TEAMS);
   const [broadcast, setBroadcast] = useState<BroadcastState>({ ...INITIAL_BROADCAST });
 
@@ -110,6 +112,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setActiveTeamIdState(state.activeTeamId);
       if (state.questions) setQuestions(state.questions);
       if (state.scores) setScores(state.scores);
+      if (state.finalsScores) setFinalsScores(state.finalsScores);
       if (state.broadcast) setBroadcast(state.broadcast);
       if (state.teams) setTeams(state.teams);
     };
@@ -122,6 +125,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setScores(updatedScores);
     };
 
+    const onFinalsScoresUpdate = (updatedScores: Record<string, TeamScore>) => {
+      setFinalsScores(updatedScores);
+    };
+
     const onTeamsUpdate = (updatedTeams: Team[]) => {
       setTeams(updatedTeams);
     };
@@ -129,12 +136,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     socket.on("state:sync", onStateSync);
     socket.on("broadcast:update", onBroadcastUpdate);
     socket.on("scores:update", onScoresUpdate);
+    socket.on("finalsScores:update", onFinalsScoresUpdate);
     socket.on("teams:update", onTeamsUpdate);
 
     return () => {
       socket.off("state:sync", onStateSync);
       socket.off("broadcast:update", onBroadcastUpdate);
       socket.off("scores:update", onScoresUpdate);
+      socket.off("finalsScores:update", onFinalsScoresUpdate);
       socket.off("teams:update", onTeamsUpdate);
     };
   }, []);
@@ -321,7 +330,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     currentRound, setCurrentRound,
     activeTeamId, setActiveTeamId, advanceToNextTeam,
     questions, markR1Used, markR3Used, markR4Used, markR5Used, resetQuestions,
-    scores, addPoints, deductPoints,
+    scores, finalsScores, addPoints, deductPoints,
     flashTeam, toggleDataset,
     broadcast, updateBroadcast,
     startTimer, stopTimer, resetTimer,
@@ -331,7 +340,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     currentTeam, userRole, login, loginAudience, logout,
     currentGroup, hostGroupId, setHostGroupId,
     currentRound, setCurrentRound, activeTeamId, setActiveTeamId, advanceToNextTeam,
-    questions, scores, broadcast,
+    questions, scores, finalsScores, broadcast,
     updateBroadcast, startTimer, stopTimer, resetTimer,
     markR1Used, markR3Used, markR4Used, markR5Used, resetQuestions,
     addPoints, deductPoints, flashTeam, toggleDataset,

@@ -157,7 +157,7 @@ function BuzzPanel() {
 
 // ── Score sidebar ─────────────────────────────────────────────────────────────
 function ScoreSidebar() {
-  const { groups, teams, scores, hostGroupId, setHostGroupId, activeTeamId, setActiveTeamId, currentRound, addPoints, deductPoints, updateBroadcast } = useApp();
+  const { groups, teams, scores, finalsScores, hostGroupId, setHostGroupId, activeTeamId, setActiveTeamId, currentRound, addPoints, deductPoints, updateBroadcast } = useApp();
 
   useEffect(() => {
     if (!activeTeamId && hostGroupId) {
@@ -169,7 +169,8 @@ function ScoreSidebar() {
   }, [activeTeamId, hostGroupId, teams, setActiveTeamId]);
   const roundKey = ROUND_KEYS[currentRound];
   const groupTeams = teams.filter((t) => t.groupId === hostGroupId);
-  const ranked = [...groupTeams].sort((a, b) => (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0));
+  const targetScores = hostGroupId === "finals" ? finalsScores : scores;
+  const ranked = [...groupTeams].sort((a, b) => (targetScores[b.id]?.total ?? 0) - (targetScores[a.id]?.total ?? 0));
 
   const displayGroups = hostGroupId === "finals" 
     ? groups.filter(g => g.id === "finals")
@@ -232,7 +233,7 @@ function ScoreSidebar() {
                   </span>
                 </div>
                 <motion.span layout className="font-black tabular-nums" style={{ fontFamily: "var(--font-display)", fontSize: "18px", color: isActive ? "#FFCC00" : "#fff" }}>
-                  {scores[team.id]?.total ?? 0}
+                  {targetScores[team.id]?.total ?? 0}
                 </motion.span>
               </motion.div>
             );

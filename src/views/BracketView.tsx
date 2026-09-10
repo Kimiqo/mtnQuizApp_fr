@@ -15,11 +15,12 @@ function GroupCard({
   isActive?: boolean;
   onClick?: () => void;
 }) {
-  const { groups, teams, scores, broadcast } = useApp();
+  const { groups, teams, scores, finalsScores, broadcast } = useApp();
   const group = groups.find((g) => g.id === groupId)!;
   const groupTeams = teams.filter((t) => (t.originalGroupId || t.groupId) === groupId);
+  const targetScores = groupId === "finals" ? finalsScores : scores;
   const ranked = [...groupTeams].sort(
-    (a, b) => (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0)
+    (a, b) => (targetScores[b.id]?.total ?? 0) - (targetScores[a.id]?.total ?? 0)
   );
 
   return (
@@ -93,7 +94,7 @@ function GroupCard({
                   fontSize: "14px",
                 }}
               >
-                {scores[team.id]?.total ?? 0}
+                {targetScores[team.id]?.total ?? 0}
               </span>
             </div>
           ))
@@ -191,12 +192,13 @@ function GrandFinalBox({ onStartFinals }: { onStartFinals: () => void }) {
 }
 
 function LiveLeaderboard() {
-  const { groups, teams, scores, userRole, hostGroupId, currentTeam, broadcast } = useApp();
+  const { groups, teams, scores, finalsScores, userRole, hostGroupId, currentTeam, broadcast } = useApp();
   const activeGroupId = userRole === "host" ? hostGroupId : (currentTeam?.groupId ?? "g1");
   const group = groups.find((g) => g.id === activeGroupId)!;
   const groupTeams = teams.filter((t) => (t.originalGroupId || t.groupId) === activeGroupId);
+  const targetScores = activeGroupId === "finals" ? finalsScores : scores;
   const ranked = [...groupTeams].sort(
-    (a, b) => (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0)
+    (a, b) => (targetScores[b.id]?.total ?? 0) - (targetScores[a.id]?.total ?? 0)
   );
 
   const roundKeys = ["r1", "r2", "r3", "r4"] as const;
@@ -241,7 +243,7 @@ function LiveLeaderboard() {
           </div>
         ) : (
           ranked.map((team, idx) => {
-            const score = scores[team.id] ?? { total: 0, byRound: { r1: 0, r2: 0, r3: 0, r4: 0, r5: 0 } };
+            const score = targetScores[team.id] ?? { total: 0, byRound: { r1: 0, r2: 0, r3: 0, r4: 0, r5: 0 } };
             const isFirst = idx === 0 && score.total > 0;
             return (
               <motion.div
