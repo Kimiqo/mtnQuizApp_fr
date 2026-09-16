@@ -4,11 +4,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Lock, LogIn, ShieldCheck, Users, Monitor } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 
-type Tab = "team" | "host" | "audience";
+type Tab = "host" | "audience";
 
 export default function LoginView() {
   const { login, loginAudience, teams, userRole, currentTeam } = useApp();
-  const [tab, setTab] = useState<Tab>("team");
+  const [tab, setTab] = useState<Tab>("audience");
   const [teamId, setTeamId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -25,10 +25,10 @@ export default function LoginView() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (tab === "audience") { 
-      loginAudience(); 
+    if (tab === "audience") {
+      loginAudience();
       navigate("/audience");
-      return; 
+      return;
     }
     setLoading(true);
     await new Promise((r) => setTimeout(r, 600));
@@ -48,9 +48,8 @@ export default function LoginView() {
   };
 
   const tabs = [
-    { id: "team" as Tab,     label: "Team Login",   icon: <Users size={13} />,       hint: "contestant" },
-    { id: "host" as Tab,     label: "Host",          icon: <ShieldCheck size={13} />, hint: "moderator" },
-    { id: "audience" as Tab, label: "Projector",     icon: <Monitor size={13} />,     hint: "No login required" },
+    { id: "host" as Tab, label: "Host", icon: <ShieldCheck size={13} />, hint: "moderator" },
+    { id: "audience" as Tab, label: "Audience", icon: <Monitor size={13} />, hint: "No login required" },
   ];
 
   return (
@@ -118,27 +117,7 @@ export default function LoginView() {
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             <AnimatePresence mode="wait">
-              {tab === "team" && (
-                <motion.div key="team" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[10px] uppercase tracking-widest" style={{ color: "#FFCC0080", fontFamily: "var(--font-mono)" }}>
-                      Select Your Team
-                    </label>
-                    <select
-                      value={teamId}
-                      onChange={(e) => setTeamId(e.target.value)}
-                      className="select-custom w-full rounded-sm border px-4 py-3 text-sm font-semibold outline-none"
-                      style={{ background: "#080808", borderColor: "#333", color: teamId ? "#fff" : "#555", fontFamily: "var(--font-body)" }}
-                    >
-                      <option value="">— Choose your team —</option>
-                      {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
-                    <p className="text-[10px]" style={{ color: "#444", fontFamily: "var(--font-mono)" }}>
-                      You will be routed to your group&apos;s live contestant view.
-                    </p>
-                  </div>
-                </motion.div>
-              )}
+
 
               {tab === "host" && (
                 <motion.div key="host" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">

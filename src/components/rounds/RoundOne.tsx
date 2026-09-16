@@ -13,7 +13,7 @@ const SHUFFLE_PHRASES = [
 ];
 
 export default function RoundOne() {
-  const { questions, markR1Used, resetQuestions, activeTeamId, teams, addPoints, updateBroadcast, clearBuzzState, advanceToNextTeam, flashTeam } = useApp();
+  const { questions, markR1Used, resetQuestions, activeTeamId, teams, addPoints, updateBroadcast, clearBuzzState, advanceToNextTeam, flashTeam, broadcast, awardBuzzedTeam, passQuestion } = useApp();
   const [currentQ, setCurrentQ] = useState<typeof questions.round1[0] | null>(null);
   const [isShuffling, setIsShuffling] = useState(false);
   const [shuffleText, setShuffleText] = useState("");
@@ -79,22 +79,38 @@ export default function RoundOne() {
   }, [currentQ, isShuffling]);
 
   const handleCorrect = useCallback(() => {
-    if (!currentQ || !showAnswer || !activeTeamId) return;
+    if (!currentQ || !showAnswer) return;
+    if (broadcast.isBonusMode) {
+      if (!broadcast.buzzedTeamId) return;
+      awardBuzzedTeam(2);
+      setCurrentQ(null);
+      setShowAnswer(false);
+      updateBroadcast({ questionText: null, questionId: null });
+      return;
+    }
+    if (!activeTeamId) return;
     addPoints(activeTeamId, 2, "r1");
     advanceToNextTeam();
     setCurrentQ(null);
     setShowAnswer(false);
     updateBroadcast({ questionText: null, questionId: null });
-  }, [currentQ, showAnswer, activeTeamId, addPoints, advanceToNextTeam, updateBroadcast]);
+  }, [currentQ, showAnswer, activeTeamId, addPoints, advanceToNextTeam, updateBroadcast, broadcast, awardBuzzedTeam]);
 
   const handleIncorrect = useCallback(() => {
-    if (!currentQ || !showAnswer || !activeTeamId) return;
+    if (!currentQ || !showAnswer) return;
+    if (broadcast.isBonusMode) {
+      if (!broadcast.buzzedTeamId) return;
+      passQuestion();
+      setShowAnswer(false);
+      return;
+    }
+    if (!activeTeamId) return;
     flashTeam(activeTeamId, "wrong");
     advanceToNextTeam();
     setCurrentQ(null);
     setShowAnswer(false);
     updateBroadcast({ questionText: null, questionId: null });
-  }, [currentQ, showAnswer, activeTeamId, advanceToNextTeam, updateBroadcast, flashTeam]);
+  }, [currentQ, showAnswer, activeTeamId, advanceToNextTeam, updateBroadcast, flashTeam, broadcast, passQuestion]);
 
   useHostShortcuts({
     onDraw: draw,
@@ -103,8 +119,8 @@ export default function RoundOne() {
     onIncorrect: handleIncorrect,
     isDrawDisabled: !!currentQ || isShuffling || remaining === 0,
     isShowAnswerDisabled: !currentQ || showAnswer,
-    isCorrectDisabled: !showAnswer,
-    isWrongDisabled: !showAnswer,
+    isCorrectDisabled: !showAnswer || (broadcast.isBonusMode && !broadcast.buzzedTeamId),
+    isWrongDisabled: !showAnswer || (broadcast.isBonusMode && !broadcast.buzzedTeamId),
   });
 
   useEffect(() => () => {
@@ -193,13 +209,15 @@ export default function RoundOne() {
               </div>
 
               {/* Question text */}
-              <div className="flex flex-1 items-center px-6 py-4">
-                <motion.p initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-                  className="font-bold leading-snug"
-                  style={{ fontFamily: "var(--font-display)", fontSize: "clamp(26px,4vw,48px)", color: "#fff" }}
-                >
-                  {currentQ.text}
-                </motion.p>
+              <div className="flex flex-1 overflow-y-auto min-h-0 px-6 py-4">
+                <div className="m-auto w-full">
+                  <motion.p initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+                    className="font-bold leading-snug"
+                    style={{ fontFamily: "var(--font-display)", fontSize: "clamp(26px,4vw,48px)", color: "#fff" }}
+                  >
+                    {currentQ.text}
+                  </motion.p>
+                </div>
               </div>
 
               <HostAnswerControls

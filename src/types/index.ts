@@ -1,12 +1,13 @@
 
-export type RoundType = 1 | 2 | 3 | 4 | 5;
+export type RoundType = 1 | 2 | 3 | 4 | 5 | 6;
 export type RoundKey = "r1" | "r2" | "r3" | "r4" | "r5";
 export type UserRole = "host" | "team" | "audience";
 
 export interface Team {
   id: string;
   name: string;
-  groupId: string | null;
+  groupId?: string | null;
+  seat?: string;
   originalGroupId?: string | null;
   password: string;
 }
@@ -41,6 +42,7 @@ export interface TFQuestion {
   id: number;
   text: string;
   answer: "TRUE" | "FALSE";
+  correction?: string;
   explanation?: string;
   isUsed: boolean;
   difficulty?: "easy" | "medium" | "hard";
@@ -63,12 +65,13 @@ export interface QuestionBank {
   round3: TFQuestion[];
   round4: R1Question[];
   round5: Riddle[];
+  tiebreaker: R1Question[];
 }
 
 // MySQL: `scores` table
 export interface TeamScore {
   total: number;
-  byRound: Record<RoundKey, number>;
+  byRound: Record<RoundKey | "tb", number>;
 }
 
 // Shared broadcast state — in production, replace with WebSocket/Socket.io
@@ -80,10 +83,10 @@ export interface BroadcastState {
   isShuffling: boolean;
 
   // Buzzer system
-  buzzEnabled: boolean;
   buzzedTeamId: string | null;
   lockedOutTeamIds: string[];
   isStealMode: boolean;
+  isBonusMode: boolean;
 
 
   // Shared timer (R2 discussion, R5 clue timer, steal timer)
@@ -91,6 +94,9 @@ export interface BroadcastState {
   timerTotal: number;
   timerActive: boolean;
   timerLabel: string; // "DISCUSSION" | "CLUE" | "STEAL" | ""
+  
+  // Tiebreaker state
+  isTiebreaker: boolean;
 
   // Group Draw Ceremony
   drawPhase: "idle" | "awaiting" | "shuffling" | "revealing" | "done" | "revealing_finals" | "podium_reveal";

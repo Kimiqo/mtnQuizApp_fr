@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { LogOut, Zap, Trophy, ArrowRight, RadioTower, Star, Shuffle, Play } from "lucide-react";
+import { LogOut, Zap, Trophy, ArrowRight, RadioTower, Star, Play } from "lucide-react";
 import { useApp } from "@/context/AppContext";
-import { ROUND_CONFIG, TEAMS, playSound } from "@/data/seed";
-import { GroupDrawCeremony } from "@/components/shared/GroupDrawCeremony";
+import { ROUND_CONFIG, playSound } from "@/data/seed";
 
 function GroupCard({
   groupId,
@@ -15,13 +14,15 @@ function GroupCard({
   isActive?: boolean;
   onClick?: () => void;
 }) {
-  const { groups, teams, scores, finalsScores, broadcast } = useApp();
-  const group = groups.find((g) => g.id === groupId)!;
-  const groupTeams = teams.filter((t) => (t.originalGroupId || t.groupId) === groupId);
+  const { groups, teams, scores, finalsScores } = useApp();
+  const group = groups.find((g) => g.id === groupId);
+  if (!group) return null;
+  const groupTeams = teams.filter((t) => t.groupId === groupId);
   const targetScores = groupId === "finals" ? finalsScores : scores;
-  const ranked = [...groupTeams].sort(
-    (a, b) => (targetScores[b.id]?.total ?? 0) - (targetScores[a.id]?.total ?? 0)
-  );
+  const ranked = [...groupTeams].sort((a, b) => {
+    if (a.seat && b.seat && a.seat !== b.seat) return a.seat.localeCompare(b.seat);
+    return (targetScores[b.id]?.total ?? 0) - (targetScores[a.id]?.total ?? 0);
+  });
 
   return (
     <motion.div
@@ -64,12 +65,7 @@ function GroupCard({
         )}
       </div>
       <div className="p-3 flex flex-col gap-1.5">
-        {broadcast.drawPhase !== "done" ? (
-          <div className="flex items-center justify-center py-4">
-            <span className="text-xs font-semibold" style={{ color: "#444" }}>???</span>
-          </div>
-        ) : (
-          ranked.map((team, idx) => (
+        {ranked.map((team, idx) => (
             <div key={team.id} className="flex items-center gap-2">
               <span
                 className="w-4 text-right text-[10px] font-semibold"
@@ -97,8 +93,7 @@ function GroupCard({
                 {targetScores[team.id]?.total ?? 0}
               </span>
             </div>
-          ))
-        )}
+          ))}
       </div>
     </motion.div>
   );
@@ -121,7 +116,7 @@ function BracketConnector({ side }: { side: "left" | "right" }) {
 function GrandFinalBox({ onStartFinals }: { onStartFinals: () => void }) {
   const { groups, teams, scores, hostGroupId } = useApp();
   const winners = groups.filter(g => g.id !== "finals").map((g) => {
-    const groupTeams = teams.filter((t) => (t.originalGroupId || t.groupId) === g.id);
+    const groupTeams = teams.filter((t) => t.groupId === g.id);
     if (groupTeams.length === 0) return null;
     return groupTeams.reduce(
       (top, t) => ((scores[t.id]?.total ?? 0) > (scores[top.id]?.total ?? 0) ? t : top),
@@ -194,12 +189,14 @@ function GrandFinalBox({ onStartFinals }: { onStartFinals: () => void }) {
 function LiveLeaderboard() {
   const { groups, teams, scores, finalsScores, userRole, hostGroupId, currentTeam, broadcast } = useApp();
   const activeGroupId = userRole === "host" ? hostGroupId : (currentTeam?.groupId ?? "g1");
-  const group = groups.find((g) => g.id === activeGroupId)!;
-  const groupTeams = teams.filter((t) => (t.originalGroupId || t.groupId) === activeGroupId);
+  const group = groups.find((g) => g.id === activeGroupId);
+  if (!group) return null;
+  const groupTeams = teams.filter((t) => t.groupId === activeGroupId);
   const targetScores = activeGroupId === "finals" ? finalsScores : scores;
-  const ranked = [...groupTeams].sort(
-    (a, b) => (targetScores[b.id]?.total ?? 0) - (targetScores[a.id]?.total ?? 0)
-  );
+  const ranked = [...groupTeams].sort((a, b) => {
+    if (a.seat && b.seat && a.seat !== b.seat) return a.seat.localeCompare(b.seat);
+    return (targetScores[b.id]?.total ?? 0) - (targetScores[a.id]?.total ?? 0);
+  });
 
   const roundKeys = ["r1", "r2", "r3", "r4"] as const;
 
@@ -237,12 +234,7 @@ function LiveLeaderboard() {
         </div>
 
         {/* Rows */}
-        {broadcast.drawPhase !== "done" ? (
-          <div className="py-8 text-center text-sm font-semibold uppercase tracking-widest" style={{ color: "#444", fontFamily: "var(--font-mono)" }}>
-            Awaiting Draw...
-          </div>
-        ) : (
-          ranked.map((team, idx) => {
+        {ranked.map((team, idx) => {
             const score = targetScores[team.id] ?? { total: 0, byRound: { r1: 0, r2: 0, r3: 0, r4: 0, r5: 0 } };
             const isFirst = idx === 0 && score.total > 0;
             return (
@@ -299,8 +291,7 @@ function LiveLeaderboard() {
                 </motion.span>
               </motion.div>
             );
-          })
-        )}
+          })}
       </div>
     </div>
   );
@@ -314,13 +305,12 @@ export default function BracketView() {
   const displayName = isHost ? "Quiz Host" : currentTeam?.name ?? "";
   const currentRoundConfig = ROUND_CONFIG[currentRound];
 
-  const showDrawCeremony = ["idle", "awaiting", "shuffling", "revealing"].includes(broadcast.drawPhase);
 
   const handleStartFinals = useCallback(() => {
     if (!confirm("Start the Grand Final? This will switch to the finals question bank.")) return;
     setHostGroupId("finals");
     setCurrentRound(1);
-    updateBroadcast({ questionText: null, questionId: null, timerSecs: 0, timerTotal: 0, timerActive: false, timerLabel: "", buzzEnabled: false, buzzedTeamId: null, lockedOutTeamIds: [], isStealMode: false });
+    updateBroadcast({ questionText: null, questionId: null, timerSecs: 0, timerTotal: 0, timerActive: false, timerLabel: "", buzzedTeamId: null, lockedOutTeamIds: [], isStealMode: false });
     navigate("/host/quiz");
   }, [setHostGroupId, setCurrentRound, updateBroadcast, navigate]);
 
@@ -405,16 +395,6 @@ export default function BracketView() {
             </button>
           )}
 
-          {isHost && !showDrawCeremony && (
-            <button
-              onClick={() => updateBroadcast({ drawPhase: "idle", drawRevealedGroups: 0 })}
-              className="hidden sm:flex items-center gap-1.5 rounded-sm border px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition-colors hover:border-yellow-400/40"
-              style={{ borderColor: "#333", color: "#888", fontFamily: "var(--font-mono)" }}
-            >
-              <Shuffle size={11} />
-              Redraw Groups
-            </button>
-          )}
 
           {isHost && (
             <motion.button
@@ -448,18 +428,6 @@ export default function BracketView() {
 
       {/* ── Body ── */}
       <div className="relative z-10 flex flex-1 flex-col gap-5 overflow-y-auto p-5">
-        {/* Draw Ceremony Overlay */}
-        <AnimatePresence>
-          {showDrawCeremony && (
-            <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="absolute inset-0 z-50 flex items-center justify-center p-8"
-              style={{ background: "rgba(0,0,0,0.9)" }}
-            >
-              <GroupDrawCeremony />
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {/* Group tabs (host only) */}
         {isHost && (

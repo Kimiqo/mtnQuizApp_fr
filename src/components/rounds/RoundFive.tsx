@@ -26,7 +26,7 @@ function CountdownRing({ seconds, total }: { seconds: number; total: number }) {
 }
 
 export default function RoundFive() {
-  const { questions, markR5Used, updateBroadcast, clearBuzzState, startTimer, enableBuzz, disableBuzz, broadcast, awardBuzzedTeam, passQuestion, teams } = useApp();
+  const { questions, markR5Used, updateBroadcast, clearBuzzState, startTimer, broadcast, awardBuzzedTeam, passQuestion, teams } = useApp();
   const [currentRiddle, setCurrentRiddle] = useState<typeof questions.round5[0] | null>(null);
   const [clueLevel, setClueLevel] = useState<ClueLevel>(0);
   const [showAnswer, setShowAnswer] = useState(false);
@@ -59,12 +59,11 @@ export default function RoundFive() {
     setClueLevel(next);
     setShowAnswer(false);
     startClueTimer();
-    enableBuzz();
     playSound("reveal");
     // Broadcast the clue text
     const clueText = next === 1 ? currentRiddle.clue1 : next === 2 ? currentRiddle.clue2 : currentRiddle.clue3;
     updateBroadcast({ questionText: clueText, isShuffling: false });
-  }, [clueLevel, currentRiddle, startClueTimer, enableBuzz, updateBroadcast]);
+  }, [clueLevel, currentRiddle, startClueTimer, updateBroadcast]);
 
   const drawRiddle = useCallback(() => {
     if (!available.length) return;

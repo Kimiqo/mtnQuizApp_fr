@@ -3,8 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { LogOut, Trophy, RadioTower, Zap, ArrowRight, Star } from "lucide-react";
 import { useApp } from "@/context/AppContext";
-import { ROUND_CONFIG, TEAMS, playSound } from "@/data/seed";
-import { GroupDrawCeremony } from "@/components/shared/GroupDrawCeremony";
+import { ROUND_CONFIG, playSound } from "@/data/seed";
 import { FinalsRevealCeremony } from "@/components/shared/FinalsRevealCeremony";
 import PodiumCeremony from "@/components/shared/PodiumCeremony";
 
@@ -59,9 +58,10 @@ function AnimatedLeaderboard({ groupId }: { groupId: string }) {
   const { teams, scores, finalsScores, broadcast, activeTeamId } = useApp();
   const groupTeams = teams.filter((t) => t.groupId === groupId);
   const targetScores = groupId === "finals" ? finalsScores : scores;
-  const ranked = [...groupTeams].sort(
-    (a, b) => (targetScores[b.id]?.total ?? 0) - (targetScores[a.id]?.total ?? 0)
-  );
+  const ranked = [...groupTeams].sort((a, b) => {
+    if (a.seat && b.seat && a.seat !== b.seat) return a.seat.localeCompare(b.seat);
+    return (targetScores[b.id]?.total ?? 0) - (targetScores[a.id]?.total ?? 0);
+  });
 
   const activeFloorTeamId = broadcast.buzzedTeamId || activeTeamId;
 
@@ -136,8 +136,9 @@ function AnimatedLeaderboard({ groupId }: { groupId: string }) {
 
 function GroupCard({ groupId, isActive, onClick }: { groupId: string; isActive?: boolean; onClick?: () => void; }) {
   const { groups, teams, scores, finalsScores } = useApp();
-  const group = groups.find((g) => g.id === groupId)!;
-  const groupTeams = teams.filter((t) => (t.originalGroupId || t.groupId) === groupId);
+  const group = groups.find((g) => g.id === groupId);
+  if (!group) return null;
+  const groupTeams = teams.filter((t) => t.groupId === groupId);
   const targetScores = groupId === "finals" ? finalsScores : scores;
   const ranked = [...groupTeams].sort((a, b) => (targetScores[b.id]?.total ?? 0) - (targetScores[a.id]?.total ?? 0));
 
@@ -189,7 +190,7 @@ function BracketConnector({ side }: { side: "left" | "right" }) {
 function GrandFinalBox() {
   const { groups, teams, scores } = useApp();
   const winners = groups.filter(g => g.id !== "finals").map((g) => {
-    const groupTeams = teams.filter((t) => (t.originalGroupId || t.groupId) === g.id);
+    const groupTeams = teams.filter((t) => (t.groupId) === g.id);
     if (groupTeams.length === 0) return null;
     return groupTeams.reduce((top, t) => ((scores[t.id]?.total ?? 0) > (scores[top.id]?.total ?? 0) ? t : top), groupTeams[0]);
   }).filter(Boolean) as import("@/types").Team[];
@@ -218,7 +219,7 @@ function GrandFinalBox() {
 export default function AudienceView() {
   const navigate = useNavigate();
   const { logout, broadcast, currentRound, groups, hostGroupId, teams, scores } = useApp();
-  const [tab, setTab] = useState<"quiz" | "scoreboard">("quiz");
+  const [tab, setTab] = useState<"quiz" | "scoreboard">("scoreboard");
   const roundConfig = ROUND_CONFIG[currentRound];
   const buzzedTeam = teams.find(t => t.id === broadcast.buzzedTeamId);
 
@@ -228,6 +229,13 @@ export default function AudienceView() {
       playSound(broadcast.flashFeedback.type);
     }
   }, [broadcast.flashFeedback]);
+
+  // Auto-switch to quiz tab when a question is broadcasted
+  useEffect(() => {
+    if (broadcast.questionText || broadcast.isShuffling) {
+      setTab("quiz");
+    }
+  }, [broadcast.questionText, broadcast.isShuffling]);
 
   if (broadcast.drawPhase === "revealing_finals") {
     return (
@@ -245,16 +253,11 @@ export default function AudienceView() {
     );
   }
 
-  if (broadcast.drawPhase !== "done") {
-    return (
-      <div className="flex h-screen w-full items-center justify-center p-8 bg-black">
-        <GroupDrawCeremony />
-      </div>
-    );
-  }
+
 
   // Auto-pick the group with highest activity (most points total)
   const activeGroup = groups.find((g) => g.id === hostGroupId) ?? groups[0];
+  if (!activeGroup) return null;
 
   return (
     <div
@@ -266,6 +269,24 @@ export default function AudienceView() {
         className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2"
         style={{ width: "80%", height: "2px", background: "#FFCC00", boxShadow: "0 0 160px 100px #FFCC0015" }}
       />
+
+      {/* BONUS MODE OVERLAY */}
+      <AnimatePresence>
+        {broadcast.isBonusMode && (
+          <motion.div
+            initial={{ opacity: 0, y: -50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -50 }}
+            className="pointer-events-none absolute left-0 right-0 top-16 z-50 flex justify-center"
+          >
+            <div className="rounded-sm border px-8 py-3 text-center shadow-2xl" style={{ borderColor: "#FFCC0060", background: "rgba(20, 15, 0, 0.9)", backdropFilter: "blur(4px)" }}>
+              <span className="font-black uppercase tracking-widest" style={{ color: "#FFCC00", fontFamily: "var(--font-display)", fontSize: "clamp(24px, 5vw, 40px)", textShadow: "0 0 20px rgba(255, 204, 0, 0.4)" }}>
+                🌟 BONUS 🌟
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Grid texture */}
       <div
@@ -386,8 +407,8 @@ export default function AudienceView() {
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
                     className={`scanline relative flex flex-1 flex-col overflow-hidden rounded-sm border min-h-0 ${!broadcast.flashFeedback ? "glow-yellow" : ""}`}
-                    style={{ 
-                      borderColor: broadcast.flashFeedback?.type === "correct" ? "#22c55e" : broadcast.flashFeedback?.type === "wrong" ? "#ef4444" : "#FFCC0050", 
+                    style={{
+                      borderColor: broadcast.flashFeedback?.type === "correct" ? "#22c55e" : broadcast.flashFeedback?.type === "wrong" ? "#ef4444" : "#FFCC0050",
                       background: broadcast.flashFeedback?.type === "correct" ? "#22c55e15" : broadcast.flashFeedback?.type === "wrong" ? "#ef444415" : "#0A0A0A",
                       boxShadow: broadcast.flashFeedback?.type === "correct" ? "0 0 80px 16px #22c55e30" : broadcast.flashFeedback?.type === "wrong" ? "0 0 80px 16px #ef444430" : undefined
                     }}
@@ -419,24 +440,24 @@ export default function AudienceView() {
               {buzzedTeam && (
                 <motion.div
                   initial={{ opacity: 0, y: 12, scale: 0.95 }}
-                  animate={{ 
-                    opacity: 1, 
-                    y: 0, 
+                  animate={{
+                    opacity: 1,
+                    y: 0,
                     scale: broadcast.flashFeedback?.teamId === buzzedTeam.id ? [1, 1.05, 1, 1.05, 1] : 1,
-                    transition: { duration: broadcast.flashFeedback ? 0.4 : 0.4, ease: [0.22, 1, 0.36, 1] } 
+                    transition: { duration: broadcast.flashFeedback ? 0.4 : 0.4, ease: [0.22, 1, 0.36, 1] }
                   }}
                   exit={{ opacity: 0, scale: 0.95 }}
                   className="shrink-0 flex items-center justify-center gap-4 rounded-sm border py-5"
                   style={{
-                    borderColor: broadcast.flashFeedback?.teamId === buzzedTeam.id 
-                                 ? (broadcast.flashFeedback.type === "correct" ? "#22c55e" : "#ef4444") 
-                                 : "#FFCC0060",
+                    borderColor: broadcast.flashFeedback?.teamId === buzzedTeam.id
+                      ? (broadcast.flashFeedback.type === "correct" ? "#22c55e" : "#ef4444")
+                      : "#FFCC0060",
                     background: broadcast.flashFeedback?.teamId === buzzedTeam.id
-                                 ? (broadcast.flashFeedback.type === "correct" ? "#22c55e15" : "#ef444415")
-                                 : "#0f0e00",
+                      ? (broadcast.flashFeedback.type === "correct" ? "#22c55e15" : "#ef444415")
+                      : "#0f0e00",
                     boxShadow: broadcast.flashFeedback?.teamId === buzzedTeam.id
-                                 ? (broadcast.flashFeedback.type === "correct" ? "0 0 80px 16px #22c55e30" : "0 0 80px 16px #ef444430")
-                                 : "0 0 60px 8px #FFCC0020",
+                      ? (broadcast.flashFeedback.type === "correct" ? "0 0 80px 16px #22c55e30" : "0 0 80px 16px #ef444430")
+                      : "0 0 60px 8px #FFCC0020",
                   }}
                 >
                   <Zap size={24} style={{ color: broadcast.flashFeedback?.teamId === buzzedTeam.id ? (broadcast.flashFeedback.type === "correct" ? "#4ade80" : "#f87171") : "#FFCC00" }} />
@@ -483,7 +504,7 @@ export default function AudienceView() {
                 All Groups — Top Score
               </p>
               {groups.filter(g => g.id !== "finals").map((g) => {
-                const top = [...teams.filter((t) => (t.originalGroupId || t.groupId) === g.id)]
+                const top = [...teams.filter((t) => (t.groupId) === g.id)]
                   .sort((a, b) => (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0))[0];
                 const pts = top ? (scores[top.id]?.total ?? 0) : 0;
                 return (
@@ -500,7 +521,7 @@ export default function AudienceView() {
       ) : (
         /* ── Scoreboard Tab ── */
         <div className="relative z-10 flex flex-1 flex-col gap-6 overflow-y-auto p-6">
-          
+
           <div className="shrink-0 mb-6">
             <p className="mb-4 flex items-center justify-center gap-2 text-sm uppercase tracking-widest" style={{ color: "#FFCC00", fontFamily: "var(--font-mono)" }}>
               <Trophy size={14} /> Tournament Bracket
@@ -525,108 +546,109 @@ export default function AudienceView() {
 
           <div className="max-w-5xl mx-auto w-full flex flex-col gap-8">
             {groups.filter(g => g.id !== "finals").map((g) => {
-            const groupTeams = teams.filter((t) => (t.originalGroupId || t.groupId) === g.id);
-            const ranked = [...groupTeams].sort(
-              (a, b) => (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0)
-            );
-            const roundKeys = ["r1", "r2", "r3", "r4"] as const;
+              const groupTeams = teams.filter((t) => (t.groupId) === g.id);
+              const ranked = [...groupTeams].sort((a, b) => {
+                if (a.seat && b.seat && a.seat !== b.seat) return a.seat.localeCompare(b.seat);
+                return (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0);
+              });
+              const roundKeys = ["r1", "r2", "r3", "r4"] as const;
 
-            return (
-              <div key={g.id} className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
-                  <Trophy size={16} style={{ color: "#FFCC00" }} />
-                  <h2 className="font-black uppercase tracking-widest"
-                    style={{ fontFamily: "var(--font-display)", fontSize: "18px", color: "#FFCC00" }}
-                  >
-                    {g.name}
-                  </h2>
-                </div>
-
-                <div className="overflow-hidden rounded-sm border" style={{ borderColor: "#222" }}>
-                  {/* Table header */}
-                  <div
-                    className="grid border-b px-5 py-3"
-                    style={{
-                      borderColor: "#1e1e1e",
-                      background: "#080808",
-                      gridTemplateColumns: "48px 1fr repeat(5, 72px) 90px",
-                    }}
-                  >
-                    {["#", "Team", "R1", "R2", "R3", "R4", "R5", "Total"].map((h) => (
-                      <span
-                        key={h}
-                        className="text-center text-[11px] font-semibold uppercase tracking-widest first:text-left"
-                        style={{ color: "#555", fontFamily: "var(--font-mono)" }}
-                      >
-                        {h}
-                      </span>
-                    ))}
+              return (
+                <div key={g.id} className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <Trophy size={16} style={{ color: "#FFCC00" }} />
+                    <h2 className="font-black uppercase tracking-widest"
+                      style={{ fontFamily: "var(--font-display)", fontSize: "18px", color: "#FFCC00" }}
+                    >
+                      {g.name}
+                    </h2>
                   </div>
 
-                  {/* Rows */}
-                  {ranked.map((team, idx) => {
-                    const score = scores[team.id] ?? { total: 0, byRound: { r1: 0, r2: 0, r3: 0, r4: 0, r5: 0 } };
-                    const isFirst = idx === 0 && score.total > 0;
-                    return (
-                      <motion.div
-                        key={team.id}
-                        layout
-                        className="grid border-b px-5 py-4 transition-colors last:border-0"
-                        style={{
-                          borderColor: "#141414",
-                          background: isFirst ? "#0f0e00" : idx % 2 === 0 ? "#0A0A0A" : "#080808",
-                          gridTemplateColumns: "48px 1fr repeat(5, 72px) 90px",
-                        }}
-                      >
+                  <div className="overflow-hidden rounded-sm border" style={{ borderColor: "#222" }}>
+                    {/* Table header */}
+                    <div
+                      className="grid border-b px-5 py-3"
+                      style={{
+                        borderColor: "#1e1e1e",
+                        background: "#080808",
+                        gridTemplateColumns: "48px 1fr repeat(5, 72px) 90px",
+                      }}
+                    >
+                      {["#", "Team", "R1", "R2", "R3", "R4", "R5", "Total"].map((h) => (
                         <span
-                          className="font-black"
+                          key={h}
+                          className="text-center text-[11px] font-semibold uppercase tracking-widest first:text-left"
+                          style={{ color: "#555", fontFamily: "var(--font-mono)" }}
+                        >
+                          {h}
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Rows */}
+                    {ranked.map((team, idx) => {
+                      const score = scores[team.id] ?? { total: 0, byRound: { r1: 0, r2: 0, r3: 0, r4: 0, r5: 0 } };
+                      const isFirst = idx === 0 && score.total > 0;
+                      return (
+                        <motion.div
+                          key={team.id}
+                          layout
+                          className="grid border-b px-5 py-4 transition-colors last:border-0"
                           style={{
-                            fontFamily: "var(--font-display)",
-                            fontSize: "22px",
-                            color: isFirst ? "#FFCC00" : "#444",
+                            borderColor: "#141414",
+                            background: isFirst ? "#0f0e00" : idx % 2 === 0 ? "#0A0A0A" : "#080808",
+                            gridTemplateColumns: "48px 1fr repeat(5, 72px) 90px",
                           }}
                         >
-                          {idx + 1}
-                        </span>
-                        <span
-                          className="flex items-center gap-2 font-semibold"
-                          style={{ color: isFirst ? "#fff" : "#ccc", fontSize: "16px" }}
-                        >
-                          {isFirst && <Trophy size={14} style={{ color: "#FFCC00", flexShrink: 0 }} />}
-                          {team.name}
-                        </span>
-                        {roundKeys.map((rk) => (
-                          <motion.span
-                            key={rk}
-                            layout
-                            className="text-center tabular-nums"
+                          <span
+                            className="font-black"
                             style={{
-                              fontFamily: "var(--font-mono)",
-                              fontSize: "16px",
-                              color: (score.byRound[rk] ?? 0) > 0 ? "#aaa" : "#333",
+                              fontFamily: "var(--font-display)",
+                              fontSize: "22px",
+                              color: isFirst ? "#FFCC00" : "#444",
                             }}
                           >
-                            {score.byRound[rk] ?? 0}
+                            {idx + 1}
+                          </span>
+                          <span
+                            className="flex items-center gap-2 font-semibold"
+                            style={{ color: isFirst ? "#fff" : "#ccc", fontSize: "16px" }}
+                          >
+                            {isFirst && <Trophy size={14} style={{ color: "#FFCC00", flexShrink: 0 }} />}
+                            {team.name}
+                          </span>
+                          {roundKeys.map((rk) => (
+                            <motion.span
+                              key={rk}
+                              layout
+                              className="text-center tabular-nums"
+                              style={{
+                                fontFamily: "var(--font-mono)",
+                                fontSize: "16px",
+                                color: (score.byRound[rk] ?? 0) > 0 ? "#aaa" : "#333",
+                              }}
+                            >
+                              {score.byRound[rk] ?? 0}
+                            </motion.span>
+                          ))}
+                          <motion.span
+                            layout
+                            className="text-center font-black tabular-nums"
+                            style={{
+                              fontFamily: "var(--font-display)",
+                              fontSize: "28px",
+                              color: isFirst ? "#FFCC00" : "#fff",
+                            }}
+                          >
+                            {score.total}
                           </motion.span>
-                        ))}
-                        <motion.span
-                          layout
-                          className="text-center font-black tabular-nums"
-                          style={{
-                            fontFamily: "var(--font-display)",
-                            fontSize: "28px",
-                            color: isFirst ? "#FFCC00" : "#fff",
-                          }}
-                        >
-                          {score.total}
-                        </motion.span>
-                      </motion.div>
-                    );
-                  })}
+                        </motion.div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
           </div>
         </div>
       )}

@@ -14,20 +14,22 @@ import RoundTwo from "@/components/rounds/RoundTwo";
 import RoundThree from "@/components/rounds/RoundThree";
 import RoundFour from "@/components/rounds/RoundFour";
 import RoundFive from "@/components/rounds/RoundFive";
+import RoundTiebreaker from "@/components/rounds/RoundTiebreaker";
 
-const ROUND_KEYS: Record<RoundType, RoundKey> = { 1: "r1", 2: "r2", 3: "r3", 4: "r4", 5: "r5" };
+const ROUND_KEYS: Record<RoundType, RoundKey | "tb"> = { 1: "r1", 2: "r2", 3: "r3", 4: "r4", 5: "r5", 6: "tb" };
 
 // ── Buzz Control Panel (host) ─────────────────────────────────────────────────
 function BuzzPanel() {
   const {
-    broadcast, teams,
-    enableBuzz, disableBuzz, lockoutTeam, passQuestion, awardBuzzedTeam, clearBuzzState,
+    broadcast, teams, hostGroupId,
+    selectBuzzedTeam, activateBonus, lockoutTeam, passQuestion, awardBuzzedTeam, clearBuzzState,
     currentRound,
   } = useApp();
 
-  const { buzzEnabled, buzzedTeamId, lockedOutTeamIds, isStealMode } = broadcast;
-  const isBuzzerRound = currentRound === 4 || currentRound === 5;
+  const { buzzedTeamId, lockedOutTeamIds, isStealMode, isBonusMode } = broadcast;
+  const isBuzzerRound = currentRound === 4 || currentRound === 6 || isBonusMode;
   const buzzedTeam = buzzedTeamId ? teams.find((t) => t.id === buzzedTeamId) : null;
+  const groupTeams = teams.filter((t) => t.groupId === hostGroupId).sort((a, b) => (a.seat || "").localeCompare(b.seat || ""));
 
   if (!isBuzzerRound) return null;
 
@@ -48,21 +50,33 @@ function BuzzPanel() {
         )}
       </div>
 
-      {/* Enable/disable toggle */}
-      <button
-        onClick={buzzEnabled ? disableBuzz : enableBuzz}
-        className="flex items-center justify-center gap-2 rounded-sm py-2.5 font-black uppercase tracking-widest transition-all"
-        style={{
-          background: buzzEnabled ? "#22C55E20" : "#1a1a1a",
-          border: `1px solid ${buzzEnabled ? "#22C55E60" : "#333"}`,
-          color: buzzEnabled ? "#22C55E" : "#555",
-          fontFamily: "var(--font-mono)",
-          fontSize: "11px",
-        }}
-      >
-        <div className="h-2 w-2 rounded-full" style={{ background: buzzEnabled ? "#22C55E" : "#444" }} />
-        {buzzEnabled ? "Buzzer OPEN" : "Enable Buzzing"}
-      </button>
+      {/* Team Selection Grid (Host Manual Selection) */}
+      {!buzzedTeam && (
+        <div className="grid grid-cols-2 gap-2">
+          {groupTeams.map((team) => {
+            const isLockedOut = lockedOutTeamIds.includes(team.id);
+            return (
+              <button
+                key={team.id}
+                onClick={() => selectBuzzedTeam(team.id)}
+                disabled={isLockedOut}
+                className="flex items-center justify-center rounded-sm py-2 px-1 text-[10px] font-bold uppercase transition-all"
+                style={{
+                  background: isLockedOut ? "#1a0a0a" : "#22C55E15",
+                  border: `1px solid ${isLockedOut ? "#EF444430" : "#22C55E40"}`,
+                  color: isLockedOut ? "#EF444460" : "#22C55E",
+                  opacity: isLockedOut ? 0.5 : 1,
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
+                {team.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+
 
       {/* Buzzed-in alert */}
       <AnimatePresence>
@@ -90,7 +104,7 @@ function BuzzPanel() {
                 <button
                   key={pts}
                   onClick={() => awardBuzzedTeam(pts)}
-                  className="flex flex-1 items-center justify-center rounded-sm py-1.5 text-xs font-black"
+                  className="flex flex-1 items-center justify-center rounded-sm py-1.5 text-xs font-black transition-opacity hover:opacity-80"
                   style={{ background: "#FFCC00", color: "#000", fontFamily: "var(--font-display)", fontSize: "13px" }}
                 >
                   +{pts}
@@ -129,14 +143,14 @@ function BuzzPanel() {
         >
           <AlertTriangle size={12} style={{ color: "#FFCC00" }} />
           <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: "#FFCC00", fontFamily: "var(--font-mono)" }}>
-            Steal timer running
+            Bonus mode active
           </span>
         </div>
       )}
 
       {/* Locked-out teams */}
       {lockedOutTeamIds.length > 0 && (
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1 mt-2">
           <span className="text-[9px] uppercase tracking-widest" style={{ color: "#555", fontFamily: "var(--font-mono)" }}>
             Locked out
           </span>
@@ -197,7 +211,7 @@ function ScoreSidebar() {
         >
           {displayGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
         </select>
-        {hostGroupId !== "finals" && (
+        {hostGroupId !== "finals" && displayGroups.length > 0 && (
           <button
             onClick={() => {
               const currentIndex = displayGroups.findIndex(g => g.id === hostGroupId);
@@ -269,7 +283,7 @@ function ScoreSidebar() {
         <button
           onClick={() => {
             if (confirm("End the tournament and show the podium?")) {
-              updateBroadcast({ drawPhase: "podium_reveal", timerActive: false, buzzEnabled: false });
+              updateBroadcast({ drawPhase: "podium_reveal", timerActive: false });
             }
           }}
           className="mt-8 flex w-full items-center justify-center gap-2 rounded-sm border px-3 py-3 text-[11px] font-black uppercase tracking-widest transition-all hover:bg-[#FFCC0020]"
@@ -289,6 +303,8 @@ export default function QuizStageView() {
   const { currentRound, setCurrentRound, activeTeamId, setActiveTeamId, hostGroupId, teams, updateBroadcast, broadcast } = useApp();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const groupTeams = teams.filter((t) => t.groupId === hostGroupId);
+
+
 
   useEffect(() => {
     const handler = () => setIsFullscreen(!!document.fullscreenElement);
@@ -346,11 +362,11 @@ export default function QuizStageView() {
         </div>
 
         <div className="hidden items-center gap-1 lg:flex">
-          {([1, 2, 3, 4] as RoundType[]).map((r) => (
+          {([1, 2, 3, 4, 6] as RoundType[]).map((r) => (
             <button key={r} onClick={() => {
               setCurrentRound(r);
               // Clear question and timer from screen so they don't persist across rounds
-              updateBroadcast({ questionText: null, questionId: null, timerSecs: 0, timerTotal: 0, timerActive: false, timerLabel: "", buzzEnabled: false, buzzedTeamId: null, lockedOutTeamIds: [], isStealMode: false });
+              updateBroadcast({ questionText: null, questionId: null, timerSecs: 0, timerTotal: 0, timerActive: false, timerLabel: "", buzzedTeamId: null, lockedOutTeamIds: [], isStealMode: false, isBonusMode: false });
             }}
               className="rounded-sm border px-3 py-1 text-xs font-bold uppercase tracking-widest transition-all"
               style={{
@@ -359,16 +375,36 @@ export default function QuizStageView() {
                 color: currentRound === r ? "#FFCC00" : "#555",
                 fontFamily: "var(--font-mono)",
               }}
-            >R{r}</button>
+            >{r === 6 ? "TIE-BREAKER" : `R${r}`}</button>
           ))}
         </div>
 
-        <button onClick={toggleFullscreen}
+        <div className="flex items-center gap-2">
+          <button onClick={() => {
+            const nextBonus = !broadcast.isBonusMode;
+            let lockedOut = [...broadcast.lockedOutTeamIds];
+            if (nextBonus && activeTeamId && !lockedOut.includes(activeTeamId)) {
+               lockedOut.push(activeTeamId);
+            }
+            updateBroadcast({ isBonusMode: nextBonus, isStealMode: false, lockedOutTeamIds: nextBonus ? lockedOut : [] });
+          }}
+            className="flex h-8 items-center justify-center rounded-sm border px-3 transition-colors font-bold tracking-widest text-[10px]"
+            style={{ 
+              borderColor: broadcast.isBonusMode ? "#FFCC00" : "#333", 
+              color: broadcast.isBonusMode ? "#000" : "#555",
+              background: broadcast.isBonusMode ? "#FFCC00" : "transparent"
+            }} 
+            title="Toggle Bonus Mode"
+          >
+            BONUS
+          </button>
+          <button onClick={toggleFullscreen}
           className="flex h-8 w-8 items-center justify-center rounded-sm border transition-colors hover:border-yellow-400/30"
           style={{ borderColor: "#333", color: "#555" }} title="Fullscreen (F)"
         >
           {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
         </button>
+        </div>
       </header>
 
       {/* ── Body ── */}
@@ -386,7 +422,7 @@ export default function QuizStageView() {
                 return (
                   <button key={r} onClick={() => {
                     setCurrentRound(r);
-                    updateBroadcast({ questionText: null, questionId: null, timerSecs: 0, timerTotal: 0, timerActive: false, timerLabel: "", buzzEnabled: false, buzzedTeamId: null, lockedOutTeamIds: [], isStealMode: false });
+                    updateBroadcast({ questionText: null, questionId: null, timerSecs: 0, timerTotal: 0, timerActive: false, timerLabel: "", buzzedTeamId: null, lockedOutTeamIds: [], isStealMode: false });
                   }}
                     className="flex items-center gap-2 rounded-sm border px-3 py-2 text-left transition-all"
                     style={{ borderColor: currentRound === r ? "#FFCC0060" : "#1a1a1a", background: currentRound === r ? "#0f0e00" : "transparent" }}
@@ -396,6 +432,20 @@ export default function QuizStageView() {
                   </button>
                 );
               })}
+
+              <div className="my-1 h-px" style={{ background: "#1a1a1a" }} />
+              
+              <button
+                onClick={() => {
+                  setCurrentRound(6);
+                  updateBroadcast({ questionText: null, questionId: null, timerSecs: 0, timerTotal: 0, timerActive: false, timerLabel: "", buzzedTeamId: null, lockedOutTeamIds: [], isStealMode: false, isBonusMode: false });
+                }}
+                className="flex items-center gap-2 rounded-sm border px-3 py-2 text-left transition-all"
+                style={{ borderColor: currentRound === 6 ? "#FFCC0060" : "#1a1a1a", background: currentRound === 6 ? "#0f0e00" : "transparent" }}
+              >
+                <span className="text-[10px] font-bold" style={{ color: currentRound === 6 ? "#FFCC00" : "#444", fontFamily: "var(--font-mono)" }}>TB</span>
+                <span className="truncate text-[11px] font-semibold" style={{ color: currentRound === 6 ? "#fff" : "#666" }}>Tie-Breaker</span>
+              </button>
             </div>
           </div>
 
@@ -439,7 +489,7 @@ export default function QuizStageView() {
               {currentRound === 2 && <RoundTwo />}
               {currentRound === 3 && <RoundThree />}
               {currentRound === 4 && <RoundFive />}
-              {currentRound === 5 && <RoundFour />}
+              {currentRound === 6 && <RoundTiebreaker />}
             </motion.div>
           </AnimatePresence>
         </main>

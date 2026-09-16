@@ -18,8 +18,6 @@ import type {
   BroadcastState,
 } from "@/types";
 import {
-  TEAMS,
-  GROUPS,
   INITIAL_QUESTIONS,
   INITIAL_BROADCAST,
   buildInitialScores,
@@ -60,8 +58,8 @@ interface AppContextType {
   // ── Scores ────────────────────────────────────────────────────────────────
   scores: Record<string, TeamScore>;
   finalsScores: Record<string, TeamScore>;
-  addPoints: (teamId: string, points: number, round: RoundKey) => void;
-  deductPoints: (teamId: string, points: number, round: RoundKey) => void;
+  addPoints: (teamId: string, points: number, round: RoundKey | "tb") => void;
+  deductPoints: (teamId: string, points: number, round: RoundKey | "tb") => void;
   toggleDataset: () => void;
   flashTeam: (teamId: string, type: "correct" | "wrong") => void;
   // ── Broadcast state (host writes → contestant/audience read) ─────────────
@@ -74,9 +72,8 @@ interface AppContextType {
   resetTimer: (secs: number) => void;
 
   // ── Buzz mechanics ────────────────────────────────────────────────────────
-  enableBuzz: () => void;
-  disableBuzz: () => void;
-  teamBuzz: (teamId: string) => void;   // called from ContestantView
+  selectBuzzedTeam: (teamId: string) => void;
+  activateBonus: () => void;
   lockoutTeam: (teamId: string) => void;
   passQuestion: () => void;             // lockout buzzed team, start steal timer
   awardBuzzedTeam: (pts: number) => void;
@@ -98,7 +95,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [questions, setQuestions] = useState<QuestionBank>(INITIAL_QUESTIONS);
   const [scores, setScores] = useState<Record<string, TeamScore>>(buildInitialScores());
   const [finalsScores, setFinalsScores] = useState<Record<string, TeamScore>>({});
-  const [teams, setTeams] = useState<Team[]>(TEAMS);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [broadcast, setBroadcast] = useState<BroadcastState>({ ...INITIAL_BROADCAST });
 
   const prevBroadcast = useRef(broadcast);
@@ -115,6 +113,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (state.finalsScores) setFinalsScores(state.finalsScores);
       if (state.broadcast) setBroadcast(state.broadcast);
       if (state.teams) setTeams(state.teams);
+      if (state.groups) setGroups(state.groups);
     };
 
     const onBroadcastUpdate = (updatedBroadcast: BroadcastState) => {
@@ -139,6 +138,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     socket.on("finalsScores:update", onFinalsScoresUpdate);
     socket.on("teams:update", onTeamsUpdate);
 
+    // Request state explicitly to avoid race condition where socket connected before these listeners were registered
+    socket.emit("request:state");
+
     return () => {
       socket.off("state:sync", onStateSync);
       socket.off("broadcast:update", onBroadcastUpdate);
@@ -151,7 +153,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // --- Sound Effects ---
   useEffect(() => {
     const prev = prevBroadcast.current;
-    if (!prev.buzzEnabled && broadcast.buzzEnabled) playSound("buzz");
     if (!prev.buzzedTeamId && broadcast.buzzedTeamId) playSound("buzz");
     if (broadcast.lockedOutTeamIds.length > prev.lockedOutTeamIds.length) playSound("lockout");
     if (!prev.isStealMode && broadcast.isStealMode) playSound("timer");
@@ -172,17 +173,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Derived
   const currentGroup = useMemo(() => {
-    if (currentTeam) return GROUPS.find((g) => g.id === currentTeam.groupId) ?? null;
+    if (currentTeam) return groups.find((g) => g.id === currentTeam.groupId) ?? null;
     if (userRole === "host" || userRole === "audience")
-      return GROUPS.find((g) => g.id === hostGroupId) ?? null;
+      return groups.find((g) => g.id === hostGroupId) ?? null;
     return null;
-  }, [currentTeam, userRole, hostGroupId]);
+  }, [currentTeam, userRole, hostGroupId, groups]);
 
   // ── Auth ────────────────────────────────────────────────────────────────
   // Auto-reconnect using saved session token on mount
   useEffect(() => {
     const savedToken = localStorage.getItem("quiz_session_token");
-    if (!savedToken) return;
+    if (!savedToken) {
+      if (window.location.pathname !== "/" && window.location.pathname !== "/audience") {
+        window.location.href = "/";
+      }
+      return;
+    }
 
     socket.emit("auth", { token: savedToken }, (res: any) => {
       if (res.success) {
@@ -190,7 +196,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setUserRole("host");
           setCurrentTeam(null);
         } else if (res.role === "team") {
-          const team = TEAMS.find((t) => t.id === res.teamId);
+          const team = teams.find((t) => t.id === res.teamId);
           setCurrentTeam(team || null);
           setUserRole("team");
         } else if (res.role === "audience") {
@@ -200,6 +206,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } else {
         // Token expired or invalid — clear it
         localStorage.removeItem("quiz_session_token");
+        if (window.location.pathname !== "/" && window.location.pathname !== "/audience") {
+          window.location.href = "/";
+        }
       }
     });
   }, []);
@@ -215,7 +224,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             setUserRole("host");
             setCurrentTeam(null);
           } else {
-            const team = TEAMS.find((t) => t.id === teamId);
+            const team = teams.find((t) => t.id === teamId);
             setCurrentTeam(team || null);
             setUserRole("team");
           }
@@ -244,6 +253,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     socket.disconnect();
     socket.connect(); // Reconnect as anonymous
   }, []);
+
+  useEffect(() => {
+    socket.on("force:logout", logout);
+    return () => {
+      socket.off("force:logout", logout);
+    };
+  }, [logout]);
 
   const toggleDataset = useCallback(() => socket.emit("host:toggle-dataset"), []);
 
@@ -280,10 +296,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const resetQuestions = useCallback(() => socket.emit("host:reset"), []);
 
   // ── Scores ────────────────────────────────────────────────────────────────
-  const addPoints = useCallback((teamId: string, pts: number, round: RoundKey) => {
+  const addPoints = useCallback((teamId: string, pts: number, round: RoundKey | "tb") => {
     socket.emit("host:score", { action: "add", teamId, pts, round });
   }, []);
-  const deductPoints = useCallback((teamId: string, pts: number, round: RoundKey) => {
+  const deductPoints = useCallback((teamId: string, pts: number, round: RoundKey | "tb") => {
     socket.emit("host:score", { action: "deduct", teamId, pts, round });
   }, []);
   const flashTeam = useCallback((teamId: string, type: "correct" | "wrong") => {
@@ -307,9 +323,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── Buzz mechanics ────────────────────────────────────────────────────────
-  const enableBuzz = useCallback(() => socket.emit("host:buzz-control", { action: "enable" }), []);
-  const disableBuzz = useCallback(() => socket.emit("host:buzz-control", { action: "disable" }), []);
-  const teamBuzz = useCallback((teamId: string) => socket.emit("buzz", { teamId }), []);
+  const selectBuzzedTeam = useCallback((teamId: string) => socket.emit("host:buzz-control", { action: "select", teamId }), []);
+  const activateBonus = useCallback(() => socket.emit("host:buzz-control", { action: "bonus" }), []);
   const lockoutTeam = useCallback((teamId: string) => socket.emit("host:buzz-control", { action: "lockout", teamId }), []);
   const passQuestion = useCallback(() => socket.emit("host:buzz-control", { action: "pass" }), []);
   const awardBuzzedTeam = useCallback((pts: number) => socket.emit("host:buzz-control", { action: "award", pts }), []);
@@ -325,7 +340,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AppContextType>(() => ({
     currentTeam, userRole, login, loginAudience, logout,
-    teams, groups: GROUPS, currentGroup,
+    teams, groups, currentGroup,
     hostGroupId, setHostGroupId,
     currentRound, setCurrentRound,
     activeTeamId, setActiveTeamId, advanceToNextTeam,
@@ -334,7 +349,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     flashTeam, toggleDataset,
     broadcast, updateBroadcast,
     startTimer, stopTimer, resetTimer,
-    enableBuzz, disableBuzz, teamBuzz, lockoutTeam, passQuestion, awardBuzzedTeam, clearBuzzState,
+    selectBuzzedTeam, activateBonus, lockoutTeam, passQuestion, awardBuzzedTeam, clearBuzzState,
     resetQuizData,
   }), [
     currentTeam, userRole, login, loginAudience, logout,
@@ -344,7 +359,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateBroadcast, startTimer, stopTimer, resetTimer,
     markR1Used, markR3Used, markR4Used, markR5Used, resetQuestions,
     addPoints, deductPoints, flashTeam, toggleDataset,
-    enableBuzz, disableBuzz, teamBuzz, lockoutTeam, passQuestion, awardBuzzedTeam, clearBuzzState,
+    selectBuzzedTeam, activateBonus, lockoutTeam, passQuestion, awardBuzzedTeam, clearBuzzState,
     resetQuizData,
   ]);
 

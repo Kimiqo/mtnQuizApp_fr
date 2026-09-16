@@ -8,7 +8,8 @@ import { useHostShortcuts, HostDrawButton, HostAnswerControls } from "@/componen
 export default function RoundThree() {
   const {
     questions, markR3Used, activeTeamId, teams, addPoints,
-    updateBroadcast, clearBuzzState, advanceToNextTeam, flashTeam
+    updateBroadcast, clearBuzzState, advanceToNextTeam, flashTeam,
+    broadcast, awardBuzzedTeam, passQuestion
   } = useApp();
   const [currentQ, setCurrentQ] = useState<typeof questions.round3[0] | null>(null);
   const [showAnswer, setShowAnswer] = useState(false);
@@ -40,22 +41,38 @@ export default function RoundThree() {
   }, [currentQ]);
 
   const handleCorrect = useCallback(() => {
-    if (!currentQ || !showAnswer || !activeTeamId) return;
+    if (!currentQ || !showAnswer) return;
+    if (broadcast.isBonusMode) {
+      if (!broadcast.buzzedTeamId) return;
+      awardBuzzedTeam(1);
+      setCurrentQ(null);
+      setShowAnswer(false);
+      updateBroadcast({ questionText: null, questionId: null });
+      return;
+    }
+    if (!activeTeamId) return;
     addPoints(activeTeamId, 1, "r3");
     advanceToNextTeam();
     setCurrentQ(null);
     setShowAnswer(false);
     updateBroadcast({ questionText: null, questionId: null });
-  }, [currentQ, showAnswer, activeTeamId, addPoints, advanceToNextTeam, updateBroadcast]);
+  }, [currentQ, showAnswer, activeTeamId, addPoints, advanceToNextTeam, updateBroadcast, broadcast, awardBuzzedTeam]);
 
   const handleIncorrect = useCallback(() => {
-    if (!currentQ || !showAnswer || !activeTeamId) return;
+    if (!currentQ || !showAnswer) return;
+    if (broadcast.isBonusMode) {
+      if (!broadcast.buzzedTeamId) return;
+      passQuestion();
+      setShowAnswer(false);
+      return;
+    }
+    if (!activeTeamId) return;
     flashTeam(activeTeamId, "wrong");
     advanceToNextTeam();
     setCurrentQ(null);
     setShowAnswer(false);
     updateBroadcast({ questionText: null, questionId: null });
-  }, [currentQ, showAnswer, activeTeamId, advanceToNextTeam, updateBroadcast, flashTeam]);
+  }, [currentQ, showAnswer, activeTeamId, advanceToNextTeam, updateBroadcast, flashTeam, broadcast, passQuestion]);
 
   useHostShortcuts({
     onDraw: draw,
@@ -64,8 +81,8 @@ export default function RoundThree() {
     onIncorrect: handleIncorrect,
     isDrawDisabled: !!currentQ || remaining === 0,
     isShowAnswerDisabled: !currentQ || showAnswer,
-    isCorrectDisabled: !showAnswer,
-    isWrongDisabled: !showAnswer,
+    isCorrectDisabled: !showAnswer || (broadcast.isBonusMode && !broadcast.buzzedTeamId),
+    isWrongDisabled: !showAnswer || (broadcast.isBonusMode && !broadcast.buzzedTeamId),
   });
 
   const roundLabel = "Round 3 — True / False (Directed)";
@@ -127,10 +144,12 @@ export default function RoundThree() {
                   />
                 </div>
 
-                <div className="flex flex-1 items-center px-8 py-6">
-                  <p className="font-bold leading-snug" style={{ fontFamily: "var(--font-display)", fontSize: "clamp(28px,4vw,50px)", color: "#fff" }}>
-                    {currentQ.text}
-                  </p>
+                <div className="flex flex-1 overflow-y-auto min-h-0 px-8 py-6">
+                  <div className="m-auto w-full">
+                    <p className="font-bold leading-snug" style={{ fontFamily: "var(--font-display)", fontSize: "clamp(28px,4vw,50px)", color: "#fff" }}>
+                      {currentQ.text}
+                    </p>
+                  </div>
                 </div>
 
                 {/* T/F visual answer */}
@@ -162,9 +181,9 @@ export default function RoundThree() {
                   points={1}
                 />
 
-                {/* Explanation (host only) */}
+                {/* Explanation / Correction (host only) */}
                 <AnimatePresence>
-                  {showAnswer && currentQ.explanation && (
+                  {showAnswer && (currentQ.explanation || currentQ.correction) && (
                     <motion.div initial={{ opacity: 0, height: 0, marginTop: 0 }} animate={{ opacity: 1, height: "auto", marginTop: 10 }}
                       exit={{ opacity: 0, height: 0, marginTop: 0 }} className="overflow-hidden px-6 pb-4"
                     >
@@ -173,7 +192,7 @@ export default function RoundThree() {
                       >
                         <BookOpen size={12} style={{ color: isTrue ? "#22C55E80" : "#EF444480", flexShrink: 0, marginTop: "2px" }} />
                         <p className="text-sm leading-relaxed" style={{ color: isTrue ? "#86EFAC" : "#FCA5A5", fontFamily: "var(--font-body)" }}>
-                          {currentQ.explanation}
+                          {currentQ.correction || currentQ.explanation}
                         </p>
                       </div>
                     </motion.div>

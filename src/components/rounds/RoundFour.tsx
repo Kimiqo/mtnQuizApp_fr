@@ -13,7 +13,7 @@ const SHUFFLE_PHRASES = [
 ];
 
 export default function RoundFour() {
-  const { questions, markR4Used, teams, updateBroadcast, clearBuzzState, enableBuzz, disableBuzz, broadcast, awardBuzzedTeam, passQuestion } = useApp();
+  const { questions, markR4Used, teams, updateBroadcast, clearBuzzState, broadcast, awardBuzzedTeam, passQuestion } = useApp();
   const [currentQ, setCurrentQ] = useState<typeof questions.round4[0] | null>(null);
   const [isShuffling, setIsShuffling] = useState(false);
   const [shuffleText, setShuffleText] = useState("");
@@ -49,11 +49,10 @@ export default function RoundFour() {
       setIsShuffling(false);
       setCurrentQ(sel);
       markR4Used(sel.id);
-      enableBuzz();
       playSound("reveal");
       updateBroadcast({ questionText: sel.text, questionId: sel.id, isShuffling: false });
     }, SHUFFLE_MS);
-  }, [available, isShuffling, markR4Used, updateBroadcast, clearBuzzState, enableBuzz]);
+  }, [available, isShuffling, markR4Used, updateBroadcast, clearBuzzState]);
 
   const toggleAnswer = useCallback(() => {
     if (!currentQ || isShuffling) return;
@@ -163,13 +162,15 @@ export default function RoundFour() {
               </div>
 
               {/* Question text */}
-              <div className="flex flex-1 items-center px-6 py-4">
-                <motion.p initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-                  className="font-bold leading-snug"
-                  style={{ fontFamily: "var(--font-display)", fontSize: "clamp(26px,4vw,48px)", color: "#fff" }}
-                >
-                  {currentQ.text}
-                </motion.p>
+              <div className="flex flex-1 overflow-y-auto min-h-0 px-6 py-4">
+                <div className="m-auto w-full">
+                  <motion.p initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+                    className="font-bold leading-snug"
+                    style={{ fontFamily: "var(--font-display)", fontSize: "clamp(26px,4vw,48px)", color: "#fff" }}
+                  >
+                    {currentQ.text}
+                  </motion.p>
+                </div>
               </div>
 
               {/* HOST: Answer + Explanation */}

@@ -15,7 +15,7 @@ export default function App() {
             <Route path="/" element={<LoginView />} />
             <Route path="/host/bracket" element={<BracketView />} />
             <Route path="/host/quiz" element={<QuizStageView />} />
-            <Route path="/contestant/:teamId" element={<ContestantView />} />
+            <Route path="/contestant/:teamId" element={<Navigate to="/" replace />} />
             {/* Redirect old url structure for teams that refreshed */}
             <Route path="/contestant/:groupId/:teamId" element={<Navigate to="/" replace />} />
             <Route path="/audience" element={<AudienceView />} />
