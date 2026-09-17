@@ -110,7 +110,7 @@ export default function RoundTiebreaker() {
               <div className="flex flex-1 overflow-y-auto min-h-0 px-6 py-4">
                 <div className="m-auto w-full">
                   <motion.p initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-                    className="font-bold leading-snug"
+                    className="font-bold leading-snug whitespace-pre-wrap"
                     style={{ fontFamily: "var(--font-display)", fontSize: "clamp(26px,4vw,48px)", color: "#fff" }}
                   >
                     {currentQ.text}
