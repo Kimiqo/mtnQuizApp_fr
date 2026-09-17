@@ -59,7 +59,6 @@ function AnimatedLeaderboard({ groupId }: { groupId: string }) {
   const groupTeams = teams.filter((t) => t.groupId === groupId);
   const targetScores = groupId === "finals" ? finalsScores : scores;
   const ranked = [...groupTeams].sort((a, b) => {
-    if (a.seat && b.seat && a.seat !== b.seat) return a.seat.localeCompare(b.seat);
     return (targetScores[b.id]?.total ?? 0) - (targetScores[a.id]?.total ?? 0);
   });
 
@@ -548,7 +547,6 @@ export default function AudienceView() {
             {groups.filter(g => g.id !== "finals").map((g) => {
               const groupTeams = teams.filter((t) => (t.groupId) === g.id);
               const ranked = [...groupTeams].sort((a, b) => {
-                if (a.seat && b.seat && a.seat !== b.seat) return a.seat.localeCompare(b.seat);
                 return (scores[b.id]?.total ?? 0) - (scores[a.id]?.total ?? 0);
               });
               const roundKeys = ["r1", "r2", "r3", "r4"] as const;

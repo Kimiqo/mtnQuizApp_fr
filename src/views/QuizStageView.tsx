@@ -184,7 +184,7 @@ function ScoreSidebar() {
   const roundKey = ROUND_KEYS[currentRound];
   const groupTeams = teams.filter((t) => t.groupId === hostGroupId);
   const targetScores = hostGroupId === "finals" ? finalsScores : scores;
-  const ranked = [...groupTeams].sort((a, b) => (targetScores[b.id]?.total ?? 0) - (targetScores[a.id]?.total ?? 0));
+  const ranked = [...groupTeams].sort((a, b) => (a.seat || "").localeCompare(b.seat || ""));
 
   const displayGroups = hostGroupId === "finals" 
     ? groups.filter(g => g.id === "finals")
